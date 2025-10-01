@@ -3,6 +3,7 @@ import { JobManager, JobManager__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { createPackedEncryptedRow, createPackedEncryptedTable } from "./RowDecoder";
 
 describe("JobManager - Merkle Integration", function () {
   let signers: Signers;
@@ -14,35 +15,32 @@ describe("JobManager - Merkle Integration", function () {
   // Test dataset: 4 rows for simplicity
   const testDataset = {
     id: 1,
-    rows: [
-      ethers.toUtf8Bytes("row0_data_encrypted_values"),
-      ethers.toUtf8Bytes("row1_data_encrypted_values"),
-      ethers.toUtf8Bytes("row2_data_encrypted_values"),
-      ethers.toUtf8Bytes("row3_data_encrypted_values"),
-    ] as Uint8Array[],
+    rows: [] as string[], // Will be populated with encrypted hex strings
     merkleRoot: "0x" as string,
     proofs: [] as string[][],
     schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
+    rowCount: 4,
   };
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
     signers = { deployer: ethSigners[0], alice: ethSigners[1], bob: ethSigners[2] };
-
-    // Generate test merkle tree
-    const testData = generateTestMerkleData(testDataset.rows, testDataset.id);
-    testDataset.merkleRoot = testData.root;
-    testDataset.proofs = testData.proofs;
   });
 
   beforeEach(async () => {
     ({ datasetRegistryContract, datasetRegistryAddress } = await deployDatasetRegistryFixture());
     ({ jobManagerContract, jobManagerAddress } = await deployJobManagerFixture(datasetRegistryAddress));
 
+    // Generate test dataset with proper encrypted rows
+    const testData = await generateTestDatasetWithEncryption(jobManagerAddress, signers.alice);
+    testDataset.rows = testData.rows;
+    testDataset.merkleRoot = testData.root;
+    testDataset.proofs = testData.proofs;
+
     // Setup test dataset
     await datasetRegistryContract
       .connect(signers.alice)
-      .commitDataset(testDataset.id, testDataset.merkleRoot, testDataset.schemaHash);
+      .commitDataset(testDataset.id, testDataset.rowCount, testDataset.merkleRoot, testDataset.schemaHash);
   });
 
   describe("pushRow with merkle proof", () => {
@@ -59,7 +57,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row 0 with valid proof
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex))
@@ -76,7 +74,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row 1 with valid proof
       const rowIndex = 1;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex))
@@ -93,7 +91,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row with invalid proof (wrong proof elements)
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const invalidProof = [
         ethers.keccak256(ethers.toUtf8Bytes("invalid")),
         ethers.keccak256(ethers.toUtf8Bytes("proof")),
@@ -109,10 +107,11 @@ describe("JobManager - Merkle Integration", function () {
 
       // Create different dataset
       const wrongDatasetId = 999;
+      const wrongRowCount = 1;
       const wrongRoot = ethers.keccak256(ethers.toUtf8Bytes("wrong_root"));
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(wrongDatasetId, wrongRoot, testDataset.schemaHash);
+        .commitDataset(wrongDatasetId, wrongRowCount, wrongRoot, testDataset.schemaHash);
 
       // Open job on different dataset
       await jobManagerContract.connect(signers.alice).openJob(wrongDatasetId, jobParams);
@@ -120,7 +119,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Try to push row from original dataset - should fail
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(
@@ -137,7 +136,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row 0 first time - should succeed
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex);
@@ -161,7 +160,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row 0 to first job
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await jobManagerContract.connect(signers.alice).pushRow(jobId1, rowData, merkleProof, rowIndex);
@@ -184,7 +183,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Try to push row - should fail
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(
@@ -201,7 +200,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Bob tries to push row - should fail
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(
@@ -218,7 +217,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Push row with empty proof
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const emptyProof: string[] = [];
 
       await expect(
@@ -235,7 +234,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // This should work with rowIndex = 0
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex)).to.emit(
@@ -256,7 +255,7 @@ describe("JobManager - Merkle Integration", function () {
 
       // Try to push row - should fail
       const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex];
+      const rowData = testDataset.rows[rowIndex]; // Now a hex string
       const merkleProof = testDataset.proofs[rowIndex];
 
       await expect(
@@ -267,37 +266,120 @@ describe("JobManager - Merkle Integration", function () {
 });
 
 // Test utilities
-function generateTestMerkleData(rows: Uint8Array[], datasetId: number) {
-  // Generate leaf hashes
+async function generateMerkleTreeFromRows(rows: string[], datasetId: number) {
+  if (rows.length === 0) {
+    throw new Error("Cannot generate merkle tree from empty rows");
+  }
+
+  // Generate leaf hashes for merkle tree
   const leaves = rows.map((row, index) =>
     ethers.keccak256(ethers.solidityPacked(["uint256", "uint256", "bytes"], [datasetId, index, row])),
   );
 
-  // Build simple merkle tree (for 4 leaves)
-  // Level 2: leaves
-  const level1 = [
-    ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [leaves[0], leaves[1]])),
-    ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [leaves[2], leaves[3]])),
-  ];
+  // Build merkle tree from bottom up
+  let currentLevel = leaves;
 
-  // Level 1: root
-  const root = ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [level1[0], level1[1]]));
+  // Keep building levels until we have a single root
+  while (currentLevel.length > 1) {
+    const nextLevel: string[] = [];
+
+    // Process pairs of nodes
+    for (let i = 0; i < currentLevel.length; i += 2) {
+      if (i + 1 < currentLevel.length) {
+        // Combine two nodes
+        const combined = ethers.keccak256(
+          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i + 1]]),
+        );
+        nextLevel.push(combined);
+      } else {
+        // Odd number of nodes, duplicate the last one
+        nextLevel.push(currentLevel[i]);
+      }
+    }
+
+    currentLevel = nextLevel;
+  }
+
+  const root = currentLevel[0];
 
   // Generate proofs for each leaf
-  const proofs = [
-    // Proof for leaf 0: [leaves[1], level1[1]]
-    [leaves[1], level1[1]],
-    // Proof for leaf 1: [leaves[0], level1[1]]
-    [leaves[0], level1[1]],
-    // Proof for leaf 2: [leaves[3], level1[0]]
-    [leaves[3], level1[0]],
-    // Proof for leaf 3: [leaves[2], level1[0]]
-    [leaves[2], level1[0]],
-  ];
+  const proofs = leaves.map((_, leafIndex) => generateMerkleProof(leaves, leafIndex));
 
   return {
     root,
     proofs: proofs.map((proof) => proof.map((p) => p.toString())),
+  };
+}
+
+function generateMerkleProof(leaves: string[], targetIndex: number): string[] {
+  const proof: string[] = [];
+  let currentLevel = leaves;
+  let index = targetIndex;
+
+  // Build proof from bottom up
+  while (currentLevel.length > 1) {
+    const nextLevel: string[] = [];
+    const proofElements: string[] = [];
+
+    for (let i = 0; i < currentLevel.length; i += 2) {
+      if (i + 1 < currentLevel.length) {
+        // Two nodes - combine them
+        const left = currentLevel[i];
+        const right = currentLevel[i + 1];
+        const combined = ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [left, right]));
+        nextLevel.push(combined);
+
+        // Add sibling to proof (the one we're not using for this path)
+        if (i === index) {
+          proofElements.push(right);
+        } else if (i + 1 === index) {
+          proofElements.push(left);
+        }
+      } else {
+        // Odd number of nodes, just pass through
+        nextLevel.push(currentLevel[i]);
+      }
+    }
+
+    // Add the proof elements from this level
+    proof.push(...proofElements);
+
+    // Move to next level and update index
+    currentLevel = nextLevel;
+    index = Math.floor(index / 2);
+  }
+
+  return proof;
+}
+
+async function generateTestDatasetWithEncryption(contractAddress: string, signer: HardhatEthersSigner) {
+  // Define default test data for 4 rows
+  const rowConfigs = [
+    [{ type: "euint8" as const, value: 42 }],
+    [{ type: "euint32" as const, value: 1337 }],
+    [{ type: "euint64" as const, value: 999999 }],
+    [{ type: "euint8" as const, value: 10 }],
+  ];
+
+  return generateTestDatasetWithCustomConfig(contractAddress, signer, rowConfigs);
+}
+
+async function generateTestDatasetWithCustomConfig(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  rowConfigs: { type: "euint8" | "euint32" | "euint64"; value: number }[][],
+) {
+  const cellList = rowConfigs.flat();
+  const columns = rowConfigs[0].length;
+  const rows = await createPackedEncryptedTable(contractAddress, signer, cellList, columns);
+
+  // Generate merkle tree from encrypted rows
+  const merkleData = await generateMerkleTreeFromRows(rows, 1);
+
+  return {
+    rows,
+    root: merkleData.root,
+    proofs: merkleData.proofs,
   };
 }
 

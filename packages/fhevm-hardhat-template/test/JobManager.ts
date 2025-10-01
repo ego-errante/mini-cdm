@@ -141,7 +141,9 @@ describe("JobManager", function () {
       const datasetRegistryFactory = (await ethers.getContractFactory("DatasetRegistry")) as DatasetRegistry__factory;
       const datasetRegistry = datasetRegistryFactory.attach(datasetRegistryAddress) as DatasetRegistry;
 
-      await datasetRegistry.connect(signers.deployer).commitDataset(datasetId, testData.root, schemaHash);
+      await datasetRegistry
+        .connect(signers.deployer)
+        .commitDataset(datasetId, testRows.length, testData.root, schemaHash);
 
       // Open a job
       const jobParams = {
@@ -190,7 +192,9 @@ describe("JobManager", function () {
       const datasetRegistryFactory = (await ethers.getContractFactory("DatasetRegistry")) as DatasetRegistry__factory;
       const datasetRegistry = datasetRegistryFactory.attach(datasetRegistryAddress) as DatasetRegistry;
 
-      await datasetRegistry.connect(signers.deployer).commitDataset(datasetId, testData.root, schemaHash);
+      await datasetRegistry
+        .connect(signers.deployer)
+        .commitDataset(datasetId, testRows.length, testData.root, schemaHash);
 
       // Open a job
       const jobParams = {

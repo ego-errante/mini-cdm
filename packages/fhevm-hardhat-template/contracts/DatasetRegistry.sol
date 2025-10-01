@@ -10,14 +10,15 @@ contract DatasetRegistry is IDatasetRegistry {
     struct Dataset {
         bytes32 merkleRoot;
         bytes32 schemaHash;
+        uint256 rowCount;
         address owner;
         bool exists;
     }
 
     // ---- views ----
-    function getDataset(uint256 datasetId) external view returns (bytes32 merkleRoot, bytes32 schemaHash, bool exists) {
+    function getDataset(uint256 datasetId) external view returns (bytes32 merkleRoot, bytes32 schemaHash, uint256 rowCount, bool exists) {
         Dataset memory dataset = _datasets[datasetId];
-        return (dataset.merkleRoot, dataset.schemaHash, dataset.exists);
+        return (dataset.merkleRoot, dataset.schemaHash, dataset.rowCount, dataset.exists);
     }
 
     function isDatasetOwner(uint256 datasetId, address account) external view returns (bool) {
@@ -25,8 +26,11 @@ contract DatasetRegistry is IDatasetRegistry {
     }
 
     // ---- lifecycle ----
-    function commitDataset(uint256 datasetId, bytes32 merkleRoot, bytes32 schemaHash) external {
+    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, bytes32 schemaHash) external {
         // Validate inputs
+        if (rowCount == 0) {
+            revert InvalidRowCount();
+        }
         if (merkleRoot == bytes32(0)) {
             revert InvalidMerkleRoot();
         }
@@ -50,8 +54,9 @@ contract DatasetRegistry is IDatasetRegistry {
         // Update the dataset
         dataset.merkleRoot = merkleRoot;
         dataset.schemaHash = schemaHash;
+        dataset.rowCount = rowCount;
 
-        emit DatasetCommitted(datasetId, merkleRoot, schemaHash, msg.sender);
+        emit DatasetCommitted(datasetId, merkleRoot, schemaHash, rowCount, msg.sender);
     }
 
     function deleteDataset(uint256 datasetId) external {

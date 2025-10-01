@@ -166,34 +166,11 @@ describe("RowDecoder Library", function () {
   });
 
   describe("decodeRowTo64", () => {
-    // it("should test direct FHE approach first", async () => {
-    //   // Test the exact FHECounter approach - create fresh encrypted input every time
-    //   const clearValue = 123;
-    //   const contractAddress = await decoderTestHelper.getAddress();
-
-    //   console.log("=== DIRECT FHE TEST ===");
-    //   console.log("Contract address:", contractAddress);
-    //   console.log("Signer address:", signers.alice.address);
-
-    //   const encryptedInput = await fhevm
-    //     .createEncryptedInput(contractAddress, signers.alice.address)
-    //     .add8(clearValue)
-    //     .encrypt();
-
-    //   console.log("Handle:", encryptedInput.handles[0]);
-    //   console.log("Proof length:", encryptedInput.inputProof.length);
-
-    //   // Call the direct function that mimics FHECounter exactly - try non-static first
-    //   const tx = await decoderTestHelper
-    //     .connect(signers.alice)
-    //     .testDirectFHE(encryptedInput.handles[0], encryptedInput.inputProof);
-    //   await tx.wait();
-    //   console.log("Direct FHE test succeeded with transaction");
-    // });
-
     it("should decode a single uint8 field", async () => {
       const contractAddress = await decoderTestHelper.getAddress();
-      const rowPacked = await createPackedEncryptedRow(contractAddress, signers.alice, "euint8", 123);
+      const rowPacked = await createPackedEncryptedRow(contractAddress, signers.alice, [
+        { type: "euint8", value: 123 },
+      ]);
 
       // Use the same signer that was used to create the encrypted input
       const fields = await decoderTestHelper.connect(signers.alice).decodeRowTo64.staticCall(rowPacked);
@@ -203,27 +180,18 @@ describe("RowDecoder Library", function () {
     it("should decode multiple field types", async () => {
       const contractAddress = await decoderTestHelper.getAddress();
 
-      // Create separate encrypted inputs for different types
-      const euint8Input = await fhevm.createEncryptedInput(contractAddress, signers.alice.address).add8(10).encrypt();
+      const table = await createPackedEncryptedTable(
+        contractAddress,
+        signers.alice,
+        [
+          { type: "euint8", value: 10 },
+          { type: "euint32", value: 2000 },
+          { type: "euint64", value: 300000 },
+        ],
+        3,
+      );
 
-      const euint32Input = await fhevm
-        .createEncryptedInput(contractAddress, signers.alice.address)
-        .add32(2000)
-        .encrypt();
-
-      const euint64Input = await fhevm
-        .createEncryptedInput(contractAddress, signers.alice.address)
-        .add64(300000n)
-        .encrypt();
-
-      // Pack each field individually
-      const field1 = await packEncryptedField(1, euint8Input.handles[0], euint8Input.inputProof);
-      const field2 = await packEncryptedField(2, euint32Input.handles[0], euint32Input.inputProof);
-      const field3 = await packEncryptedField(3, euint64Input.handles[0], euint64Input.inputProof);
-
-      // Combine all fields into one row
-      const rowPacked = "0x" + field1 + field2 + field3;
-
+      const rowPacked = table[0];
       const fields = await decoderTestHelper.connect(signers.alice).decodeRowTo64.staticCall(rowPacked);
       expect(fields.length).to.equal(3);
     });
@@ -244,7 +212,7 @@ describe("RowDecoder Library", function () {
     it("should handle zero-length ext and proof data", async () => {
       // Field with zero-length ext and proof
       const zeroLenField = "01" + "0000" + "" + "0000" + "";
-      const rowPacked = "0x" + zeroLenField;
+      const rowPacked = joinPacked([zeroLenField]);
 
       const fieldCount = await decoderTestHelper.validateRowStructure(rowPacked);
       expect(fieldCount).to.equal(1);
@@ -252,11 +220,11 @@ describe("RowDecoder Library", function () {
 
     it("should handle maximum reasonable field count", async () => {
       // Create 10 identical uint8 fields
-      let rowData = "";
+      let rowData: string[] = [];
       for (let i = 0; i < 10; i++) {
-        rowData += "01" + "0002" + "1234" + "0002" + "5678";
+        rowData.push("01" + "0002" + "1234" + "0002" + "5678");
       }
-      const rowPacked = "0x" + rowData;
+      const rowPacked = joinPacked(rowData);
 
       const fieldCount = await decoderTestHelper.validateRowStructure(rowPacked);
       expect(fieldCount).to.equal(10);
@@ -265,7 +233,7 @@ describe("RowDecoder Library", function () {
     it("should handle different proof lengths", async () => {
       // Field with longer proof (4 bytes instead of 2)
       const longProofField = "01" + "0002" + "1234" + "0004" + "567890ab";
-      const rowPacked = "0x" + longProofField;
+      const rowPacked = joinPacked([longProofField]);
 
       const fieldCount = await decoderTestHelper.validateRowStructure(rowPacked);
       expect(fieldCount).to.equal(1);
@@ -287,58 +255,88 @@ async function deployFixture() {
   return { decoderTestHelper };
 }
 
-async function createPackedEncryptedRow(
+export async function createPackedEncryptedTable(
   contractAddress: string,
   signer: HardhatEthersSigner,
-  type: "euint8" | "euint32" | "euint64",
-  value: number,
-): Promise<string> {
-  const input = fhevm.createEncryptedInput(contractAddress, signer.address);
+  cells: {
+    type: "euint8" | "euint32" | "euint64";
+    value: number;
+  }[],
+  columns: number,
+): Promise<string[]> {
+  const { handles, inputProof, typeTags } = await encryptValues(contractAddress, signer, cells);
 
-  let typeTag: string;
-  switch (type) {
-    case "euint8":
-      input.add8(value);
-      typeTag = "01";
-      break;
-    case "euint32":
-      input.add32(value);
-      typeTag = "02";
-      break;
-    case "euint64":
-      input.add64(value);
-      typeTag = "03";
-      break;
+  let packedMatrix: string[][] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const rowIndex = Math.floor(i / columns);
+    if (packedMatrix.length < rowIndex + 1) packedMatrix.push([]);
+    packedMatrix[rowIndex].push(await packEncryptedField(Number(typeTags[i]), handles[i], inputProof));
   }
 
-  const { handles, inputProof } = await input.encrypt();
-  const extCipher = handles[0];
-  const proof = inputProof;
+  const packedRows: string[] = [];
+  for (const row of packedMatrix) {
+    packedRows.push(joinPacked(row));
+  }
 
-  // Use the raw handle directly (not ABI-encoded)
-  const extCipherHex = ethers.hexlify(extCipher);
-  const proofHex = ethers.hexlify(proof);
-
-  // console.log("=== TEST: Creating encrypted data ===");
-  // console.log("  Raw handle:", extCipherHex);
-  // console.log("  Raw handle length:", extCipherHex.length);
-  // console.log("  Proof:", proofHex);
-
-  const extCipherBytes = extCipherHex.substring(2);
-  const proofBytes = proofHex.substring(2);
-
-  const extLen = (extCipherBytes.length / 2).toString(16).padStart(4, "0");
-
-  const proofLen = (proofBytes.length / 2).toString(16).padStart(4, "0");
-
-  const packed = typeTag + extLen + extCipherBytes + proofLen + proofBytes;
-  // console.log("  Packed Row Fragment:", packed);
-  // console.log("--------------------------------------");
-
-  return "0x" + packed;
+  return packedRows;
 }
 
-async function packEncryptedField(typeTag: number, handle: Uint8Array, proof: Uint8Array): Promise<string> {
+export async function createPackedEncryptedRow(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  columns: {
+    type: "euint8" | "euint32" | "euint64";
+    value: number;
+  }[],
+): Promise<string> {
+  const { handles, inputProof, typeTags } = await encryptValues(contractAddress, signer, columns);
+
+  let packed: string[] = [];
+  for (let i = 0; i < columns.length; i++) {
+    packed.push(await packEncryptedField(Number(typeTags[i]), handles[i], inputProof));
+  }
+
+  return joinPacked(packed);
+}
+
+async function encryptValues(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  values: {
+    type: "euint8" | "euint32" | "euint64";
+    value: number;
+  }[],
+): Promise<{ handles: Uint8Array[]; inputProof: Uint8Array; typeTags: string[] }> {
+  const input = fhevm.createEncryptedInput(contractAddress, signer.address);
+
+  const typeTags: string[] = [];
+  for (const item of values) {
+    switch (item.type) {
+      case "euint8":
+        input.add8(item.value);
+        typeTags.push("01");
+        break;
+      case "euint32":
+        input.add32(item.value);
+        typeTags.push("02");
+        break;
+      case "euint64":
+        input.add64(item.value);
+        typeTags.push("03");
+        break;
+    }
+  }
+
+  const encrypted = await input.encrypt();
+
+  return { handles: encrypted.handles, inputProof: encrypted.inputProof, typeTags };
+}
+
+function joinPacked(packed: string[]): string {
+  return "0x" + packed.join("");
+}
+
+export async function packEncryptedField(typeTag: number, handle: Uint8Array, proof: Uint8Array): Promise<string> {
   const extCipherHex = ethers.hexlify(handle);
   const proofHex = ethers.hexlify(proof);
 

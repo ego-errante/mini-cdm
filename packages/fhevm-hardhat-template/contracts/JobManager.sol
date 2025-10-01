@@ -13,6 +13,7 @@ import {
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
+import {RowDecoder} from "./RowDecoder.sol";
 
 contract JobManager is IJobManager, SepoliaConfig {
     // ---- dependencies ----
@@ -111,7 +112,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // 3. Get dataset info from registry
         uint256 datasetId = _jobDataset[jobId];
-        (bytes32 merkleRoot, , bool exists) = datasetRegistry.getDataset(datasetId);
+        (bytes32 merkleRoot, , , bool exists) = datasetRegistry.getDataset(datasetId);
         if (!exists) {
             revert DatasetNotFound();
         }
@@ -128,7 +129,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         _jobConsumedRows[jobId][rowIndex] = true;
 
         // 7. Decode row and process (streaming aggregation)
-        euint64[] memory fields = _decodeRowTo64(rowPacked);
+        euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
         JobParams memory params = _jobs[jobId];
 
         // 8. Evaluate filter (Step 3: Filter VM skeleton)
@@ -166,75 +167,6 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // TODO: Allow decryption for buyer in Step 11
         return result;
-    }
-
-    // ---- Step 2: Row Format + Decoder ----
-    // Packed row format per field: [typeTag:uint8][extLen:uint16][extCipher:bytes][proofLen:uint16][proof:bytes]
-    // typeTag: 1=euint8, 2=euint32, 3=euint64
-    // All fields upcast to euint64 for uniform math operations
-
-    /// @notice Decodes packed row data into array of euint64 fields
-    /// @param rowPacked ABI-encoded sequence of (typeTag | external ciphertext | proof) for each field
-    /// @return fields Array of decrypted euint64 values, upcast from original types
-    function _decodeRowTo64(bytes calldata rowPacked) internal returns (euint64[] memory fields) {
-        uint256 i = 0;
-        uint256 fieldCount = 0;
-
-        // First pass: count fields and validate structure
-        uint256 tempI = 0;
-        while (tempI < rowPacked.length) {
-            if (tempI + 1 > rowPacked.length) revert("Incomplete type tag");
-            uint8 typeTag = uint8(rowPacked[tempI]);
-            if (typeTag < 1 || typeTag > 3) revert("Invalid type tag");
-
-            tempI += 1; // skip typeTag
-
-            if (tempI + 2 > rowPacked.length) revert("Incomplete ext length");
-            uint16 extLen = (uint16(uint8(rowPacked[tempI])) << 8) | uint16(uint8(rowPacked[tempI + 1]));
-            tempI += 2 + extLen; // skip extLen + extCipher
-
-            if (tempI + 2 > rowPacked.length) revert("Incomplete proof length");
-            uint16 proofLen = (uint16(uint8(rowPacked[tempI])) << 8) | uint16(uint8(rowPacked[tempI + 1]));
-            tempI += 2 + proofLen; // skip proofLen + proof
-
-            fieldCount++;
-        }
-
-        if (tempI != rowPacked.length) revert("Extra data in row");
-
-        // Allocate fields array
-        fields = new euint64[](fieldCount);
-
-        // Second pass: decode each field
-        for (uint256 f = 0; f < fieldCount; f++) {
-            uint8 typeTag = uint8(rowPacked[i]);
-            i += 1;
-
-            uint16 extLen = (uint16(uint8(rowPacked[i])) << 8) | uint16(uint8(rowPacked[i + 1]));
-            i += 2;
-            bytes calldata extCipher = rowPacked[i:i + extLen];
-            i += extLen;
-
-            uint16 proofLen = (uint16(uint8(rowPacked[i])) << 8) | uint16(uint8(rowPacked[i + 1]));
-            i += 2;
-            bytes calldata proof = rowPacked[i:i + proofLen];
-            i += proofLen;
-
-            // Decode based on type tag and upcast to euint64
-            if (typeTag == 1) {
-                // euint8
-                externalEuint8 eext = abi.decode(extCipher, (externalEuint8));
-                fields[f] = FHE.asEuint64(FHE.fromExternal(eext, proof));
-            } else if (typeTag == 2) {
-                // euint32
-                externalEuint32 eext = abi.decode(extCipher, (externalEuint32));
-                fields[f] = FHE.asEuint64(FHE.fromExternal(eext, proof));
-            } else if (typeTag == 3) {
-                // euint64
-                externalEuint64 eext = abi.decode(extCipher, (externalEuint64));
-                fields[f] = FHE.fromExternal(eext, proof);
-            }
-        }
     }
 
     // ---- Step 3: Filter VM skeleton ----

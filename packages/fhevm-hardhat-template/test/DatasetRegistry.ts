@@ -26,17 +26,21 @@ describe("DatasetRegistry", function () {
   describe("commitDataset", () => {
     it("should commit new dataset successfully", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
-      await expect(datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash))
+      await expect(
+        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash),
+      )
         .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(datasetId, merkleRoot, schemaHash, signers.alice.address);
+        .withArgs(datasetId, merkleRoot, schemaHash, rowCount, signers.alice.address);
 
       // Verify the dataset was stored correctly
-      const [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(datasetId);
+      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
       expect(storedRoot).to.equal(merkleRoot);
       expect(storedSchema).to.equal(schemaHash);
+      expect(storedRowCount).to.equal(rowCount);
       expect(exists).to.be.true;
 
       // Verify ownership
@@ -46,90 +50,108 @@ describe("DatasetRegistry", function () {
 
     it("should update existing dataset when owner commits again", async () => {
       const datasetId = 1;
+      const originalRowCount = 500;
       const originalRoot = ethers.keccak256(ethers.toUtf8Bytes("original_root"));
       const originalSchema = ethers.keccak256(ethers.toUtf8Bytes("original_schema"));
+      const newRowCount = 750;
       const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
       const newSchema = ethers.keccak256(ethers.toUtf8Bytes("new_schema"));
 
       // Initial commit
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, originalRoot, originalSchema);
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, originalRowCount, originalRoot, originalSchema);
 
       // Update by same owner
-      await expect(datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, newRoot, newSchema))
+      await expect(
+        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, newRowCount, newRoot, newSchema),
+      )
         .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(datasetId, newRoot, newSchema, signers.alice.address);
+        .withArgs(datasetId, newRoot, newSchema, newRowCount, signers.alice.address);
 
       // Verify updated values
-      const [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(datasetId);
+      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
       expect(storedRoot).to.equal(newRoot);
       expect(storedSchema).to.equal(newSchema);
+      expect(storedRowCount).to.equal(newRowCount);
       expect(exists).to.be.true;
     });
 
     it("should reject commit with zero merkle root", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const zeroRoot = ethers.ZeroHash;
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, zeroRoot, schemaHash),
+        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, zeroRoot, schemaHash),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidMerkleRoot");
     });
 
     it("should reject commit with zero schema hash", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const zeroSchema = ethers.ZeroHash;
 
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, zeroSchema),
+        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, zeroSchema),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidSchemaHash");
     });
 
     it("should reject update from non-owner", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
       // Alice commits first
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       // Bob tries to update - should fail
+      const newRowCount = 1500;
       const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
       const newSchema = ethers.keccak256(ethers.toUtf8Bytes("new_schema"));
 
       await expect(
-        datasetRegistryContract.connect(signers.bob).commitDataset(datasetId, newRoot, newSchema),
+        datasetRegistryContract.connect(signers.bob).commitDataset(datasetId, newRowCount, newRoot, newSchema),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "NotDatasetOwner");
     });
 
     it("should handle multiple datasets from different providers", async () => {
       // Alice's dataset
       const aliceDatasetId = 1;
+      const aliceRowCount = 1000;
       const aliceRoot = ethers.keccak256(ethers.toUtf8Bytes("alice_root"));
       const aliceSchema = ethers.keccak256(ethers.toUtf8Bytes("alice_schema"));
 
       // Bob's dataset
       const bobDatasetId = 2;
+      const bobRowCount = 2000;
       const bobRoot = ethers.keccak256(ethers.toUtf8Bytes("bob_root"));
       const bobSchema = ethers.keccak256(ethers.toUtf8Bytes("bob_schema"));
 
       // Both commit their datasets
-      await datasetRegistryContract.connect(signers.alice).commitDataset(aliceDatasetId, aliceRoot, aliceSchema);
-      await datasetRegistryContract.connect(signers.bob).commitDataset(bobDatasetId, bobRoot, bobSchema);
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(aliceDatasetId, aliceRowCount, aliceRoot, aliceSchema);
+      await datasetRegistryContract.connect(signers.bob).commitDataset(bobDatasetId, bobRowCount, bobRoot, bobSchema);
 
       // Verify Alice's dataset
-      const [aliceStoredRoot, aliceStoredSchema, aliceExists] =
+      const [aliceStoredRoot, aliceStoredSchema, aliceStoredRowCount, aliceExists] =
         await datasetRegistryContract.getDataset(aliceDatasetId);
       expect(aliceStoredRoot).to.equal(aliceRoot);
       expect(aliceStoredSchema).to.equal(aliceSchema);
+      expect(aliceStoredRowCount).to.equal(aliceRowCount);
       expect(aliceExists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(aliceDatasetId, signers.alice.address)).to.be.true;
 
       // Verify Bob's dataset
-      const [bobStoredRoot, bobStoredSchema, bobExists] = await datasetRegistryContract.getDataset(bobDatasetId);
+      const [bobStoredRoot, bobStoredSchema, bobStoredRowCount, bobExists] =
+        await datasetRegistryContract.getDataset(bobDatasetId);
       expect(bobStoredRoot).to.equal(bobRoot);
       expect(bobStoredSchema).to.equal(bobSchema);
+      expect(bobStoredRowCount).to.equal(bobRowCount);
       expect(bobExists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(bobDatasetId, signers.bob.address)).to.be.true;
     });
@@ -138,23 +160,26 @@ describe("DatasetRegistry", function () {
   describe("getDataset", () => {
     it("should return correct data for existing dataset", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
-      const [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(datasetId);
+      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
       expect(storedRoot).to.equal(merkleRoot);
       expect(storedSchema).to.equal(schemaHash);
-      // expect(storedSchema).to.equal(schemaHash);
+      expect(storedRowCount).to.equal(rowCount);
       expect(exists).to.be.true;
     });
 
     it("should return zero values for non-existent dataset", async () => {
       const nonExistentId = 999;
 
-      const [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(nonExistentId);
+      const [storedRoot, storedSchema, storedRowCount, exists] =
+        await datasetRegistryContract.getDataset(nonExistentId);
       expect(storedRoot).to.equal(ethers.ZeroHash);
+      expect(storedRowCount).to.equal(0);
       expect(storedSchema).to.equal(ethers.ZeroHash);
       expect(exists).to.be.false;
     });
@@ -163,14 +188,15 @@ describe("DatasetRegistry", function () {
   describe("deleteDataset", () => {
     it("should delete dataset successfully", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
       // Create dataset
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       // Verify it exists
-      let [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(datasetId);
+      let [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
       expect(exists).to.be.true;
 
       // Delete it
@@ -179,9 +205,10 @@ describe("DatasetRegistry", function () {
         .withArgs(datasetId, signers.alice.address);
 
       // Verify it's deleted
-      [storedRoot, storedSchema, exists] = await datasetRegistryContract.getDataset(datasetId);
+      [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
       expect(storedRoot).to.equal(ethers.ZeroHash);
       expect(storedSchema).to.equal(ethers.ZeroHash);
+      expect(storedRowCount).to.equal(0);
       expect(exists).to.be.false;
 
       // Verify ownership is cleared
@@ -190,11 +217,12 @@ describe("DatasetRegistry", function () {
 
     it("should reject delete from non-owner", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
       // Alice creates dataset
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       // Bob tries to delete - should fail
       await expect(datasetRegistryContract.connect(signers.bob).deleteDataset(datasetId)).to.be.revertedWithCustomError(
@@ -215,20 +243,22 @@ describe("DatasetRegistry", function () {
   describe("isDatasetOwner", () => {
     it("should return true for dataset owner", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.alice.address)).to.be.true;
     });
 
     it("should return false for non-owner", async () => {
       const datasetId = 1;
+      const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
 
-      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, merkleRoot, schemaHash);
+      await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.bob.address)).to.be.false;
     });
