@@ -2,7 +2,6 @@ import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
 import { RowDecoderTestHelper, RowDecoderTestHelper__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { FhevmType } from "@fhevm/hardhat-plugin";
 
 describe("RowDecoder Library", function () {
   let signers: Signers;
@@ -238,48 +237,6 @@ describe("RowDecoder Library", function () {
     it("should reject malformed row data in decodeRowTo64", async () => {
       // Test malformed inputs
       await expect(decoderTestHelper.decodeRowTo64("0x0100")).to.be.revertedWith("Incomplete ext length");
-    });
-
-    it("should grant permission using decodeRowTo64WithBuyer then buyer should be able to decodeRowTo64 too", async () => {
-      // it.only("should grant permission using decodeRowTo64WithBuyer then buyer should be able to decodeRowTo64 too", async () => {
-      const contractAddress = await decoderTestHelper.getAddress();
-
-      // Alice (data provider) creates encrypted uint8 data
-      const clearValue = 123;
-      const encryptedInput = await fhevm
-        .createEncryptedInput(contractAddress, signers.alice.address)
-        .add8(clearValue)
-        .encrypt();
-
-      // Pack the encrypted data into row format
-      const field1 = await packEncryptedField(1, encryptedInput.handles[0], encryptedInput.inputProof);
-      const rowPacked = "0x" + field1;
-
-      console.log("=== ACL PERMISSION TEST ===");
-      console.log("Alice (provider) address:", signers.alice.address);
-      console.log("Bob (buyer) address:", signers.bob.address);
-
-      // Step 1: Alice calls decodeRowTo64WithBuyer, granting permission to Bob and contract
-      console.log("Step 1: Alice calls decodeRowTo64WithBuyer...");
-      const aliceFields = await decoderTestHelper
-        .connect(signers.alice)
-        .decodeRowTo64WithBuyer.staticCall(rowPacked, signers.bob.address);
-      expect(aliceFields.length).to.equal(1);
-      console.log("✓ Alice successfully decoded and granted permissions");
-
-      // Actually execute the transaction to persist the ACL changes
-      const tx = await decoderTestHelper.connect(signers.alice).decodeRowTo64WithBuyer(rowPacked, signers.bob.address);
-      await tx.wait();
-      console.log("✓ ACL permissions persisted");
-
-      // Step 2: Bob should now be able to call decodeRowTo64 with the same data
-      // This should work because the contract now has permission from step 1
-      console.log("Step 2: Bob calls decodeRowTo64...");
-      const bobFields = await decoderTestHelper.connect(signers.bob).decodeRowTo64.staticCall(rowPacked);
-      expect(bobFields.length).to.equal(1);
-      console.log("✓ Bob successfully decoded using contract's permission");
-
-      console.log("=== ACL PERMISSION TEST PASSED ===");
     });
   });
 

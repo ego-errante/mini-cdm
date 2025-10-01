@@ -12,6 +12,7 @@ import {
     externalEuint64
 } from "@fhevm/solidity/lib/FHE.sol";
 
+
 /**
  * @title RowDecoder
  * @notice Library for decoding encrypted row data from datasets
@@ -30,32 +31,9 @@ library RowDecoder {
      * - proofLen: uint16 (length of proof in bytes)
      * - proof: bytes (ZK proof for decryption)
      */
-    function decodeRowTo64(bytes calldata rowPacked) internal returns (euint64[] memory fields) {
-        return _decodeRowTo64Internal(rowPacked, address(0));
-    }
-
-    /**
-     * @notice Decodes packed row data into array of euint64 fields with buyer access
-     * @param rowPacked ABI-encoded sequence of (typeTag | external ciphertext | proof) for each field
-     * @param buyer Address of the data buyer who should be granted decryption access
-     * @return fields Array of decrypted euint64 values, upcast from original types
-     */
-    function decodeRowTo64WithBuyer(
-        bytes calldata rowPacked,
-        address buyer
+    function decodeRowTo64(
+        bytes calldata rowPacked
     ) internal returns (euint64[] memory fields) {
-        return _decodeRowTo64Internal(rowPacked, buyer);
-    }
-
-    /**
-     * @notice Internal function that handles the actual decoding logic
-     * @param rowPacked ABI-encoded sequence of (typeTag | external ciphertext | proof) for each field
-     * @return fields Array of decrypted euint64 values, upcast from original types
-     */
-    function _decodeRowTo64Internal(
-        bytes calldata rowPacked,
-        address /* buyer */
-    ) private returns (euint64[] memory fields) {
         uint256 fieldCount = validateRowStructure(rowPacked);
         fields = new euint64[](fieldCount);
 
@@ -66,6 +44,7 @@ library RowDecoder {
             i = newIndex;
 
             FHE.allowThis(fields[f]);
+            FHE.allow(fields[f], msg.sender);
         }
     }
 
@@ -79,7 +58,7 @@ library RowDecoder {
     function _decodeFieldAt(
         bytes calldata rowPacked,
         uint256 startIndex
-    ) private returns (euint64 field, uint256 nextIndex) {
+    ) public returns (euint64 field, uint256 nextIndex) {
         uint8 typeTag = uint8(rowPacked[startIndex]);
         uint256 i = startIndex + 1;
 

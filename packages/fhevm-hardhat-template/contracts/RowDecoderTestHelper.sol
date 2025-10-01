@@ -10,13 +10,6 @@ contract RowDecoderTestHelper is SepoliaConfig {
         return RowDecoder.decodeRowTo64(rowPacked);
     }
 
-    function decodeRowTo64WithBuyer(
-        bytes calldata rowPacked,
-        address buyer
-    ) external returns (euint64[] memory fields) {
-        return RowDecoder.decodeRowTo64WithBuyer(rowPacked, buyer);
-    }
-
     function validateRowStructure(bytes calldata rowPacked) external pure returns (uint256 fieldCount) {
         return RowDecoder.validateRowStructure(rowPacked);
     }
