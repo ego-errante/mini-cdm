@@ -51,10 +51,10 @@ describe("Merkle Integration", function () {
   });
 
   describe("pushRow with merkle proof", () => {
-    it.only("should accept valid merkle proof for row 0", async () => {
+    it("should accept valid merkle proof for row 0", async () => {
       const jobParams = createDefaultJobParams();
 
-      const job = await datasetRegistryContract.getDataset(testDataset.id);
+      await datasetRegistryContract.getDataset(testDataset.id);
 
       // Open job
       await expect(

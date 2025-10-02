@@ -65,6 +65,10 @@ contract JobManager is IJobManager, SepoliaConfig {
 
     // ---- lifecycle ----
     function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId) {
+        if (!datasetRegistry.doesDatasetExist(datasetId)) {
+            revert DatasetNotFound();
+        }
+
         if (!_isDatasetOwner(datasetId)) {
             revert NotDatasetOwner();
         }
@@ -115,6 +119,8 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
+        // TODO: Ascending or descending order? does not matter due to the operations in our DSL
+        // so we can force one and reduce data storage
         // 2. Check for duplicate row consumption in this job
         if (_jobConsumedRows[jobId][rowIndex]) {
             revert RowAlreadyConsumed();

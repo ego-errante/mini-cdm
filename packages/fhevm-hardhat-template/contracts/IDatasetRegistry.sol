@@ -8,6 +8,8 @@ interface IDatasetRegistry {
         view
         returns (bytes32 merkleRoot, bytes32 schemaHash, uint256 rowCount, address owner, bool exists);
 
+    function doesDatasetExist(uint256 datasetId) external view returns (bool);
+
     function isDatasetOwner(uint256 datasetId, address account) external view returns (bool);
 
     function isRowSchemaValid(uint256 datasetId, uint256 fieldCount) external view returns (bool);

@@ -12,6 +12,17 @@ import {
   generateMerkleTreeFromRows,
 } from "./utils";
 
+function createDefaultDatasetParams() {
+  return {
+    id: 1,
+    rows: [] as string[], // Will be populated with encrypted hex strings
+    merkleRoot: "0x" as string,
+    proofs: [] as string[][],
+    schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
+    rowCount: 4,
+  };
+}
+
 describe("JobManager", function () {
   let signers: Signers;
   let jobManagerContract: JobManager;
@@ -20,14 +31,7 @@ describe("JobManager", function () {
   let datasetRegistryContractAddress: string;
 
   // Test dataset
-  const testDataset = {
-    id: 1,
-    rows: [] as string[], // Will be populated with encrypted hex strings
-    merkleRoot: "0x" as string,
-    proofs: [] as string[][],
-    schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
-    rowCount: 4,
-  };
+  const testDataset = createDefaultDatasetParams();
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
@@ -44,6 +48,7 @@ describe("JobManager", function () {
     testDataset.rows = testData.rows;
     testDataset.merkleRoot = testData.root;
     testDataset.proofs = testData.proofs;
+    testDataset.schemaHash = testData.schemaHash;
 
     // Setup test dataset
     await datasetRegistryContract
@@ -63,7 +68,7 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open the job and expect the JobOpened event to be emitted
-      await expect(jobManagerContract.openJob(testDataset.id, signers.alice, jobParams))
+      await expect(jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice, jobParams))
         .to.emit(jobManagerContract, "JobOpened")
         .withArgs(0, testDataset.id, signers.alice); // jobId should be 0 for first job
 
@@ -99,12 +104,28 @@ describe("JobManager", function () {
       // Open first job with dataset 1
       const jobParams1 = createDefaultJobParams();
 
-      await jobManagerContract.openJob(1, signers.deployer.address, jobParams1);
-      expect(await jobManagerContract.jobDataset(0)).to.equal(1);
+      const testDataset2 = createDefaultDatasetParams();
+      const testData2 = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.alice);
+      testDataset2.id = 2;
+      testDataset2.rows = testData2.rows;
+      testDataset2.merkleRoot = testData2.root;
+      testDataset2.proofs = testData2.proofs;
+      testDataset2.schemaHash = testData2.schemaHash;
+
+      // Setup test dataset
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(testDataset2.id, testDataset2.rowCount, testDataset2.merkleRoot, testDataset2.schemaHash);
+
+      const job1Id = 0;
+      const job2Id = 1;
+
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.deployer.address, jobParams1);
+      expect(await jobManagerContract.jobDataset(job1Id)).to.equal(testDataset.id);
 
       // Open second job with dataset 2
-      await jobManagerContract.openJob(2, signers.deployer.address, jobParams1);
-      expect(await jobManagerContract.jobDataset(1)).to.equal(2);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset2.id, signers.deployer.address, jobParams1);
+      expect(await jobManagerContract.jobDataset(job2Id)).to.equal(testDataset2.id);
     });
 
     it("should reject openJob for non-existent dataset", async () => {
@@ -121,27 +142,27 @@ describe("JobManager", function () {
   describe("pushRow", () => {
     it("should emit RowPushed event when pushing a row", async () => {
       // Create test dataset with proper merkle tree
-      const datasetId = 1;
-      const testRows = ["0x" + Buffer.from("test_row_data").toString("hex")]; // Convert to hex strings
-      const testData = await generateMerkleTreeFromRows(testRows, datasetId);
-      const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
+      const testDataset2 = createDefaultDatasetParams();
+      const testData2 = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.deployer);
+      testDataset2.id = 2;
+      testDataset2.rows = testData2.rows;
+      testDataset2.merkleRoot = testData2.root;
+      testDataset2.proofs = testData2.proofs;
+      testDataset2.schemaHash = testData2.schemaHash;
 
       await datasetRegistryContract
         .connect(signers.deployer)
-        .commitDataset(datasetId, testRows.length, testData.root, schemaHash);
+        .commitDataset(testDataset2.id, testDataset2.rowCount, testDataset2.merkleRoot, testDataset2.schemaHash);
 
       // Open a job
       const jobParams = createDefaultJobParams();
 
-      await jobManagerContract.openJob(datasetId, signers.deployer.address, jobParams);
+      await jobManagerContract.connect(signers.deployer).openJob(testDataset2.id, signers.deployer.address, jobParams);
       const jobId = 0;
 
-      // Push a row with valid merkle proof and expect RowPushed event
-      const rowData = ethers.toUtf8Bytes("test_row_data");
-      const merkleProof = testData.proofs[0];
-      const rowIndex = 0;
-
-      await expect(jobManagerContract.pushRow(jobId, rowData, merkleProof, rowIndex))
+      await expect(
+        jobManagerContract.connect(signers.deployer).pushRow(jobId, testDataset2.rows[0], testDataset2.proofs[0], 0),
+      )
         .to.emit(jobManagerContract, "RowPushed")
         .withArgs(jobId);
     });
@@ -183,11 +204,11 @@ describe("JobManager", function () {
       // Open a job
       const jobParams = createDefaultJobParams();
 
-      await jobManagerContract.openJob(datasetId, signers.deployer.address, jobParams);
+      await jobManagerContract.connect(signers.deployer).openJob(datasetId, signers.deployer.address, jobParams);
       const jobId = 0;
 
       // Finalize the job and expect JobFinalized event
-      await expect(jobManagerContract.finalize(jobId))
+      await expect(jobManagerContract.connect(signers.deployer).finalize(jobId))
         .to.emit(jobManagerContract, "JobFinalized")
         .withArgs(jobId, signers.deployer.address);
 

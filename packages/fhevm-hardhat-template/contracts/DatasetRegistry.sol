@@ -24,8 +24,12 @@ contract DatasetRegistry is IDatasetRegistry {
         return (dataset.merkleRoot, dataset.schemaHash, dataset.rowCount, dataset.owner, dataset.exists);
     }
 
+    function doesDatasetExist(uint256 datasetId) external view returns (bool) {
+        return _datasets[datasetId].exists;
+    }
+
     function isDatasetOwner(uint256 datasetId, address account) external view returns (bool) {
-        return _datasets[datasetId].exists && _datasets[datasetId].owner == account;
+        return _datasets[datasetId].owner == account;
     }
 
     function isRowSchemaValid(uint256 datasetId, uint256 fieldCount) external view returns (bool) {
