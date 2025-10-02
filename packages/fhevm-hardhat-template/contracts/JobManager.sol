@@ -64,10 +64,14 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     // ---- lifecycle ----
-    function openJob(uint256 datasetId, JobParams calldata params) external returns (uint256 jobId) {
+    function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId) {
+        if (!_isDatasetOwner(datasetId)) {
+            revert NotDatasetOwner();
+        }
+
         jobId = _nextJobId++;
         _jobs[jobId] = params;
-        _jobBuyer[jobId] = msg.sender;
+        _jobBuyer[jobId] = buyer;
         _jobOpen[jobId] = true;
         _jobDataset[jobId] = datasetId;
 
@@ -87,6 +91,10 @@ contract JobManager is IJobManager, SepoliaConfig {
         return _jobBuyer[jobId] == msg.sender;
     }
 
+    function _isDatasetOwner(uint256 datasetId) internal view returns (bool) {
+        return datasetRegistry.isDatasetOwner(datasetId, msg.sender);
+    }
+
     function _isJobOpen(uint256 jobId) internal view returns (bool) {
         return _jobOpen[jobId];
     }
@@ -101,8 +109,10 @@ contract JobManager is IJobManager, SepoliaConfig {
         if (!_isJobOpen(jobId)) {
             revert JobClosed();
         }
-        if (!_isJobBuyer(jobId)) {
-            revert NotJobBuyer();
+
+        uint256 datasetId = _jobDataset[jobId];
+        if (!_isDatasetOwner(datasetId)) {
+            revert NotDatasetOwner();
         }
 
         // 2. Check for duplicate row consumption in this job
@@ -111,8 +121,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         }
 
         // 3. Get dataset info from registry
-        uint256 datasetId = _jobDataset[jobId];
-        (bytes32 merkleRoot, , , bool exists) = datasetRegistry.getDataset(datasetId);
+        (bytes32 merkleRoot, , , , bool exists) = datasetRegistry.getDataset(datasetId);
         if (!exists) {
             revert DatasetNotFound();
         }
@@ -130,6 +139,11 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // 7. Decode row and process (streaming aggregation)
         euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
+
+        if (!datasetRegistry.isRowSchemaValid(datasetId, fields.length)) {
+            revert InvalidRowSchema();
+        }
+        
         JobParams memory params = _jobs[jobId];
 
         // 8. Evaluate filter (Step 3: Filter VM skeleton)
@@ -144,9 +158,6 @@ contract JobManager is IJobManager, SepoliaConfig {
     function finalize(uint256 jobId) external returns (euint64 result) {
         if (!_isJobOpen(jobId)) {
             revert JobClosed();
-        }
-        if (!_isJobBuyer(jobId)) {
-            revert NotJobBuyer();
         }
 
         JobParams memory params = _jobs[jobId];

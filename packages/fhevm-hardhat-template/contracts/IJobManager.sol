@@ -46,7 +46,7 @@ interface IJobManager {
     function jobDataset(uint256 jobId) external view returns (uint256);
 
     // ---- lifecycle ----
-    function openJob(uint256 datasetId, JobParams calldata params) external returns (uint256 jobId);
+    function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId);
 
     /// @notice `rowPacked` is ABI-encoded per dataset schema:
     ///         a sequence of (typeTag | external ciphertext | proof) for each field.
@@ -72,9 +72,11 @@ interface IJobManager {
     error CooldownActive();
     error KAnonymityNotMet();
     error NotJobBuyer();
+    error NotDatasetOwner();
     error WeightsLengthMismatch(); // weightFieldIdx.length != weightVals.length
     error DatasetNotFound();
     error InvalidMerkleProof();
     error RowAlreadyConsumed();
     error MerkleVerificationFailed();
+    error InvalidRowSchema();
 }

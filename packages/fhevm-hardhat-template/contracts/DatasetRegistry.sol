@@ -16,13 +16,25 @@ contract DatasetRegistry is IDatasetRegistry {
     }
 
     // ---- views ----
-    function getDataset(uint256 datasetId) external view returns (bytes32 merkleRoot, bytes32 schemaHash, uint256 rowCount, bool exists) {
+    function getDataset(uint256 datasetId)
+        external
+        view
+        returns (bytes32 merkleRoot, bytes32 schemaHash, uint256 rowCount, address owner, bool exists) {
         Dataset memory dataset = _datasets[datasetId];
-        return (dataset.merkleRoot, dataset.schemaHash, dataset.rowCount, dataset.exists);
+        return (dataset.merkleRoot, dataset.schemaHash, dataset.rowCount, dataset.owner, dataset.exists);
     }
 
     function isDatasetOwner(uint256 datasetId, address account) external view returns (bool) {
         return _datasets[datasetId].exists && _datasets[datasetId].owner == account;
+    }
+
+    function isRowSchemaValid(uint256 datasetId, uint256 fieldCount) external view returns (bool) {
+        Dataset storage dataset = _datasets[datasetId];
+        if (!dataset.exists) {
+            return false;
+        }
+        bytes32 actualSchemaHash = keccak256(abi.encodePacked(fieldCount));
+        return actualSchemaHash == dataset.schemaHash;
     }
 
     // ---- lifecycle ----

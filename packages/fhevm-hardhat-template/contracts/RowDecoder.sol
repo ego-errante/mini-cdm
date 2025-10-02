@@ -145,29 +145,6 @@ library RowDecoder {
      * @return Number of fields in the row
      */
     function getFieldCount(bytes calldata rowPacked) internal pure returns (uint256) {
-        uint256 tempI = 0;
-        uint256 fieldCount = 0;
-
-        while (tempI < rowPacked.length) {
-            if (tempI + 1 > rowPacked.length) revert("Incomplete type tag");
-            uint8 typeTag = uint8(rowPacked[tempI]);
-            if (typeTag < 1 || typeTag > 3) revert("Invalid type tag");
-
-            tempI += 1; // skip typeTag
-
-            if (tempI + 2 > rowPacked.length) revert("Incomplete ext length");
-            uint16 extLen = (uint16(uint8(rowPacked[tempI])) << 8) | uint16(uint8(rowPacked[tempI + 1]));
-            tempI += 2 + extLen; // skip extLen + extCipher
-
-            if (tempI + 2 > rowPacked.length) revert("Incomplete proof length");
-            uint16 proofLen = (uint16(uint8(rowPacked[tempI])) << 8) | uint16(uint8(rowPacked[tempI + 1]));
-            tempI += 2 + proofLen; // skip proofLen + proof
-
-            fieldCount++;
-        }
-
-        if (tempI != rowPacked.length) revert("Extra data in row");
-
-        return fieldCount;
+        return validateRowStructure(rowPacked);
     }
 }
