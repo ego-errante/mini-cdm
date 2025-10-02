@@ -1,14 +1,15 @@
-import { DatasetRegistry, DatasetRegistry__factory } from "../types";
-import { JobManager, JobManager__factory } from "../types";
+import { DatasetRegistry } from "../types";
+import { JobManager } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import {
-  generateTestDatasetWithEncryption,
   createDefaultJobParams,
   Signers,
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
+  setupTestDataset,
+  TestDataset,
 } from "./utils";
 
 describe("Merkle Integration", function () {
@@ -17,16 +18,7 @@ describe("Merkle Integration", function () {
   let jobManagerContract: JobManager;
   let datasetRegistryContractAddress: string;
   let jobManagerContractAddress: string;
-
-  // Test dataset: 4 rows for simplicity
-  const testDataset = {
-    id: 1,
-    rows: [] as string[], // Will be populated with encrypted hex strings
-    merkleRoot: "0x" as string,
-    proofs: [] as string[][],
-    schemaHash: "0x" as string, // Will be populated from generateTestDatasetWithEncryption
-    rowCount: 4,
-  };
+  let testDataset: TestDataset;
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
@@ -37,24 +29,12 @@ describe("Merkle Integration", function () {
     ({ datasetRegistryContract, datasetRegistryContractAddress } = await deployDatasetRegistryFixture());
     ({ jobManagerContract, jobManagerContractAddress } = await deployJobManagerFixture(datasetRegistryContractAddress));
 
-    // Generate test dataset with proper encrypted rows
-    const testData = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.alice);
-    testDataset.rows = testData.rows;
-    testDataset.merkleRoot = testData.root;
-    testDataset.proofs = testData.proofs;
-    testDataset.schemaHash = testData.schemaHash;
-
-    // Setup test dataset
-    await datasetRegistryContract
-      .connect(signers.alice)
-      .commitDataset(testDataset.id, testDataset.rowCount, testDataset.merkleRoot, testDataset.schemaHash);
+    testDataset = await setupTestDataset(datasetRegistryContract, jobManagerContractAddress, signers.alice);
   });
 
   describe("pushRow with merkle proof", () => {
     it("should accept valid merkle proof for row 0", async () => {
       const jobParams = createDefaultJobParams();
-
-      await datasetRegistryContract.getDataset(testDataset.id);
 
       // Open job
       await expect(

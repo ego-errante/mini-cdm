@@ -4,6 +4,15 @@ import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers } from "hardhat";
 import { createPackedEncryptedTable } from "./RowDecoder";
 
+export interface TestDataset {
+  id: number;
+  rows: string[];
+  merkleRoot: string;
+  proofs: string[][];
+  schemaHash: string;
+  rowCount: number;
+}
+
 // Test utilities
 export async function generateMerkleTreeFromRows(rows: string[], datasetId: number) {
   if (rows.length === 0) {
@@ -91,7 +100,11 @@ export function generateMerkleProof(leaves: string[], targetIndex: number): stri
   return proof;
 }
 
-export async function generateTestDatasetWithEncryption(contractAddress: string, signer: HardhatEthersSigner) {
+export async function generateTestDatasetWithEncryption(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  datasetId: number = 1,
+) {
   // Define default test data for 4 rows
   const rowConfigs = [
     [{ type: "euint8" as const, value: 42 }],
@@ -100,20 +113,21 @@ export async function generateTestDatasetWithEncryption(contractAddress: string,
     [{ type: "euint8" as const, value: 10 }],
   ];
 
-  return generateTestDatasetWithCustomConfig(contractAddress, signer, rowConfigs);
+  return generateTestDatasetWithCustomConfig(contractAddress, signer, rowConfigs, datasetId);
 }
 
 export async function generateTestDatasetWithCustomConfig(
   contractAddress: string,
   signer: HardhatEthersSigner,
   rowConfigs: { type: "euint8" | "euint32" | "euint64"; value: number }[][],
+  datasetId: number = 1,
 ) {
   const cellList = rowConfigs.flat();
   const columns = rowConfigs[0].length;
   const rows = await createPackedEncryptedTable(contractAddress, signer, cellList, columns);
 
   // Generate merkle tree from encrypted rows
-  const merkleData = await generateMerkleTreeFromRows(rows, 1);
+  const merkleData = await generateMerkleTreeFromRows(rows, datasetId);
 
   // Compute schemaHash using same logic as DatasetRegistry.sol
   const schemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [columns]));
@@ -124,6 +138,38 @@ export async function generateTestDatasetWithCustomConfig(
     proofs: merkleData.proofs,
     schemaHash,
   };
+}
+
+export function createDefaultDatasetParams(id: number = 1): TestDataset {
+  return {
+    id,
+    rows: [] as string[], // Will be populated with encrypted hex strings
+    merkleRoot: "0x" as string,
+    proofs: [] as string[][],
+    schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
+    rowCount: 4,
+  };
+}
+
+export async function setupTestDataset(
+  datasetRegistry: DatasetRegistry,
+  jobManagerAddress: string,
+  owner: HardhatEthersSigner,
+  datasetId: number = 1,
+): Promise<TestDataset> {
+  const dataset = createDefaultDatasetParams(datasetId);
+
+  const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId);
+  dataset.rows = testData.rows;
+  dataset.merkleRoot = testData.root;
+  dataset.proofs = testData.proofs;
+  dataset.schemaHash = testData.schemaHash;
+
+  await datasetRegistry
+    .connect(owner)
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+
+  return dataset;
 }
 
 export function createDefaultJobParams() {
@@ -157,6 +203,29 @@ export async function deployDatasetRegistryFixture() {
   const datasetRegistryContractAddress = await datasetRegistryContract.getAddress();
 
   return { datasetRegistryContract, datasetRegistryContractAddress };
+}
+
+export interface DatasetObject {
+  merkleRoot: string;
+  schemaHash: string;
+  rowCount: bigint;
+  owner: string;
+  exists: boolean;
+}
+
+export async function getDatasetObject(
+  datasetRegistryContract: DatasetRegistry,
+  datasetId: number,
+): Promise<DatasetObject> {
+  const [merkleRoot, schemaHash, rowCount, owner, exists] = await datasetRegistryContract.getDataset(datasetId);
+
+  return {
+    merkleRoot,
+    schemaHash,
+    rowCount,
+    owner,
+    exists,
+  };
 }
 
 export async function deployJobManagerFixture(datasetRegistryContractAddress: string) {

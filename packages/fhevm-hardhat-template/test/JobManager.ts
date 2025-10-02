@@ -1,27 +1,16 @@
-import { IJobManager, IJobManager__factory, JobManager, JobManager__factory } from "../types";
-import { DatasetRegistry, DatasetRegistry__factory } from "../types";
+import { JobManager } from "../types";
+import { DatasetRegistry } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
 import {
-  generateTestDatasetWithEncryption,
   createDefaultJobParams,
   Signers,
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
-  generateMerkleTreeFromRows,
+  setupTestDataset,
+  TestDataset,
 } from "./utils";
-
-function createDefaultDatasetParams() {
-  return {
-    id: 1,
-    rows: [] as string[], // Will be populated with encrypted hex strings
-    merkleRoot: "0x" as string,
-    proofs: [] as string[][],
-    schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
-    rowCount: 4,
-  };
-}
 
 describe("JobManager", function () {
   let signers: Signers;
@@ -29,9 +18,9 @@ describe("JobManager", function () {
   let jobManagerContractAddress: string;
   let datasetRegistryContract: DatasetRegistry;
   let datasetRegistryContractAddress: string;
+  let testDataset: TestDataset;
 
   // Test dataset
-  const testDataset = createDefaultDatasetParams();
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
@@ -44,16 +33,7 @@ describe("JobManager", function () {
     ({ jobManagerContract, jobManagerContractAddress: jobManagerContractAddress } =
       await deployJobManagerFixture(datasetRegistryContractAddress));
 
-    const testData = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.alice);
-    testDataset.rows = testData.rows;
-    testDataset.merkleRoot = testData.root;
-    testDataset.proofs = testData.proofs;
-    testDataset.schemaHash = testData.schemaHash;
-
-    // Setup test dataset
-    await datasetRegistryContract
-      .connect(signers.alice)
-      .commitDataset(testDataset.id, testDataset.rowCount, testDataset.merkleRoot, testDataset.schemaHash);
+    testDataset = await setupTestDataset(datasetRegistryContract, jobManagerContractAddress, signers.alice);
   });
 
   it("should deploy the contract", async () => {
@@ -104,18 +84,9 @@ describe("JobManager", function () {
       // Open first job with dataset 1
       const jobParams1 = createDefaultJobParams();
 
-      const testDataset2 = createDefaultDatasetParams();
-      const testData2 = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.alice);
-      testDataset2.id = 2;
-      testDataset2.rows = testData2.rows;
-      testDataset2.merkleRoot = testData2.root;
-      testDataset2.proofs = testData2.proofs;
-      testDataset2.schemaHash = testData2.schemaHash;
+      const testDataset2 = await setupTestDataset(datasetRegistryContract, jobManagerContractAddress, signers.alice, 2);
 
       // Setup test dataset
-      await datasetRegistryContract
-        .connect(signers.alice)
-        .commitDataset(testDataset2.id, testDataset2.rowCount, testDataset2.merkleRoot, testDataset2.schemaHash);
 
       const job1Id = 0;
       const job2Id = 1;
@@ -141,18 +112,12 @@ describe("JobManager", function () {
 
   describe("pushRow", () => {
     it("should emit RowPushed event when pushing a row", async () => {
-      // Create test dataset with proper merkle tree
-      const testDataset2 = createDefaultDatasetParams();
-      const testData2 = await generateTestDatasetWithEncryption(jobManagerContractAddress, signers.deployer);
-      testDataset2.id = 2;
-      testDataset2.rows = testData2.rows;
-      testDataset2.merkleRoot = testData2.root;
-      testDataset2.proofs = testData2.proofs;
-      testDataset2.schemaHash = testData2.schemaHash;
-
-      await datasetRegistryContract
-        .connect(signers.deployer)
-        .commitDataset(testDataset2.id, testDataset2.rowCount, testDataset2.merkleRoot, testDataset2.schemaHash);
+      const testDataset2 = await setupTestDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.deployer,
+        2,
+      );
 
       // Open a job
       const jobParams = createDefaultJobParams();
@@ -191,26 +156,16 @@ describe("JobManager", function () {
 
   describe("finalize", () => {
     it("should emit JobFinalized event when finalizing a job", async () => {
-      // First create a dataset in registry
-      const datasetId = 1;
-      const testRows = ["0x" + Buffer.from("test_row_data").toString("hex")]; // Convert to hex strings
-      const testData = await generateMerkleTreeFromRows(testRows, datasetId);
-      const schemaHash = ethers.keccak256(ethers.toUtf8Bytes("test_schema"));
-
-      await datasetRegistryContract
-        .connect(signers.deployer)
-        .commitDataset(datasetId, testRows.length, testData.root, schemaHash);
-
       // Open a job
       const jobParams = createDefaultJobParams();
 
-      await jobManagerContract.connect(signers.deployer).openJob(datasetId, signers.deployer.address, jobParams);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.deployer.address, jobParams);
       const jobId = 0;
 
       // Finalize the job and expect JobFinalized event
-      await expect(jobManagerContract.connect(signers.deployer).finalize(jobId))
+      await expect(jobManagerContract.connect(signers.alice).finalize(jobId))
         .to.emit(jobManagerContract, "JobFinalized")
-        .withArgs(jobId, signers.deployer.address);
+        .withArgs(jobId, signers.alice.address);
 
       // Verify job is closed after finalization
       expect(await jobManagerContract.jobOpen(jobId)).to.be.false;

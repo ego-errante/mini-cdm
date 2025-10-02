@@ -2,6 +2,7 @@ import { DatasetRegistry, DatasetRegistry__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { getDatasetObject } from "./utils";
 
 describe("DatasetRegistry", function () {
   let signers: Signers;
@@ -37,11 +38,11 @@ describe("DatasetRegistry", function () {
         .withArgs(datasetId, merkleRoot, schemaHash, rowCount, signers.alice.address);
 
       // Verify the dataset was stored correctly
-      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
-      expect(storedRoot).to.equal(merkleRoot);
-      expect(storedSchema).to.equal(schemaHash);
-      expect(storedRowCount).to.equal(rowCount);
-      expect(exists).to.be.true;
+      const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
+      expect(dataset.merkleRoot).to.equal(merkleRoot);
+      expect(dataset.schemaHash).to.equal(schemaHash);
+      expect(dataset.rowCount).to.equal(BigInt(rowCount));
+      expect(dataset.exists).to.be.true;
 
       // Verify ownership
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.alice.address)).to.be.true;
@@ -70,11 +71,11 @@ describe("DatasetRegistry", function () {
         .withArgs(datasetId, newRoot, newSchema, newRowCount, signers.alice.address);
 
       // Verify updated values
-      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
-      expect(storedRoot).to.equal(newRoot);
-      expect(storedSchema).to.equal(newSchema);
-      expect(storedRowCount).to.equal(newRowCount);
-      expect(exists).to.be.true;
+      const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
+      expect(dataset.merkleRoot).to.equal(newRoot);
+      expect(dataset.schemaHash).to.equal(newSchema);
+      expect(dataset.rowCount).to.equal(BigInt(newRowCount));
+      expect(dataset.exists).to.be.true;
     });
 
     it("should reject commit with zero merkle root", async () => {
@@ -138,21 +139,19 @@ describe("DatasetRegistry", function () {
       await datasetRegistryContract.connect(signers.bob).commitDataset(bobDatasetId, bobRowCount, bobRoot, bobSchema);
 
       // Verify Alice's dataset
-      const [aliceStoredRoot, aliceStoredSchema, aliceStoredRowCount, aliceExists] =
-        await datasetRegistryContract.getDataset(aliceDatasetId);
-      expect(aliceStoredRoot).to.equal(aliceRoot);
-      expect(aliceStoredSchema).to.equal(aliceSchema);
-      expect(aliceStoredRowCount).to.equal(aliceRowCount);
-      expect(aliceExists).to.be.true;
+      const aliceDataset = await getDatasetObject(datasetRegistryContract, aliceDatasetId);
+      expect(aliceDataset.merkleRoot).to.equal(aliceRoot);
+      expect(aliceDataset.schemaHash).to.equal(aliceSchema);
+      expect(aliceDataset.rowCount).to.equal(BigInt(aliceRowCount));
+      expect(aliceDataset.exists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(aliceDatasetId, signers.alice.address)).to.be.true;
 
       // Verify Bob's dataset
-      const [bobStoredRoot, bobStoredSchema, bobStoredRowCount, bobExists] =
-        await datasetRegistryContract.getDataset(bobDatasetId);
-      expect(bobStoredRoot).to.equal(bobRoot);
-      expect(bobStoredSchema).to.equal(bobSchema);
-      expect(bobStoredRowCount).to.equal(bobRowCount);
-      expect(bobExists).to.be.true;
+      const bobDataset = await getDatasetObject(datasetRegistryContract, bobDatasetId);
+      expect(bobDataset.merkleRoot).to.equal(bobRoot);
+      expect(bobDataset.schemaHash).to.equal(bobSchema);
+      expect(bobDataset.rowCount).to.equal(BigInt(bobRowCount));
+      expect(bobDataset.exists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(bobDatasetId, signers.bob.address)).to.be.true;
     });
   });
@@ -166,22 +165,21 @@ describe("DatasetRegistry", function () {
 
       await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
-      const [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
-      expect(storedRoot).to.equal(merkleRoot);
-      expect(storedSchema).to.equal(schemaHash);
-      expect(storedRowCount).to.equal(rowCount);
-      expect(exists).to.be.true;
+      const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
+      expect(dataset.merkleRoot).to.equal(merkleRoot);
+      expect(dataset.schemaHash).to.equal(schemaHash);
+      expect(dataset.rowCount).to.equal(BigInt(rowCount));
+      expect(dataset.exists).to.be.true;
     });
 
     it("should return zero values for non-existent dataset", async () => {
       const nonExistentId = 999;
 
-      const [storedRoot, storedSchema, storedRowCount, exists] =
-        await datasetRegistryContract.getDataset(nonExistentId);
-      expect(storedRoot).to.equal(ethers.ZeroHash);
-      expect(storedRowCount).to.equal(0);
-      expect(storedSchema).to.equal(ethers.ZeroHash);
-      expect(exists).to.be.false;
+      const dataset = await getDatasetObject(datasetRegistryContract, nonExistentId);
+      expect(dataset.merkleRoot).to.equal(ethers.ZeroHash);
+      expect(dataset.rowCount).to.equal(BigInt(0));
+      expect(dataset.schemaHash).to.equal(ethers.ZeroHash);
+      expect(dataset.exists).to.be.false;
     });
   });
 
@@ -196,8 +194,8 @@ describe("DatasetRegistry", function () {
       await datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, schemaHash);
 
       // Verify it exists
-      let [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
-      expect(exists).to.be.true;
+      let dataset = await getDatasetObject(datasetRegistryContract, datasetId);
+      expect(dataset.exists).to.be.true;
 
       // Delete it
       await expect(datasetRegistryContract.connect(signers.alice).deleteDataset(datasetId))
@@ -205,11 +203,11 @@ describe("DatasetRegistry", function () {
         .withArgs(datasetId, signers.alice.address);
 
       // Verify it's deleted
-      [storedRoot, storedSchema, storedRowCount, exists] = await datasetRegistryContract.getDataset(datasetId);
-      expect(storedRoot).to.equal(ethers.ZeroHash);
-      expect(storedSchema).to.equal(ethers.ZeroHash);
-      expect(storedRowCount).to.equal(0);
-      expect(exists).to.be.false;
+      dataset = await getDatasetObject(datasetRegistryContract, datasetId);
+      expect(dataset.merkleRoot).to.equal(ethers.ZeroHash);
+      expect(dataset.schemaHash).to.equal(ethers.ZeroHash);
+      expect(dataset.rowCount).to.equal(BigInt(0));
+      expect(dataset.exists).to.be.false;
 
       // Verify ownership is cleared
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.alice.address)).to.be.false;
