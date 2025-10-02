@@ -4,9 +4,6 @@ pragma solidity ^0.8.24;
 import {
     FHE,
     euint32,
-    externalEuint32,
-    externalEuint8,
-    externalEuint64,
     euint64,
     ebool
 } from "@fhevm/solidity/lib/FHE.sol";
@@ -17,25 +14,25 @@ import {RowDecoder} from "./RowDecoder.sol";
 
 contract JobManager is IJobManager, SepoliaConfig {
     // ---- dependencies ----
-    IDatasetRegistry public immutable datasetRegistry;
+    IDatasetRegistry public immutable DATASET_REGISTRY;
 
-    constructor(address _datasetRegistry) {
-        datasetRegistry = IDatasetRegistry(_datasetRegistry);
+    constructor(address _DATASET_REGISTRY) {
+        DATASET_REGISTRY = IDatasetRegistry(_DATASET_REGISTRY);
     }
 
     // ---- state ----
     uint256 private _nextJobId;
-    mapping(uint256 => JobParams) private _jobs;
-    mapping(uint256 => address) private _jobBuyer;
-    mapping(uint256 => bool) private _jobOpen;
-    mapping(uint256 => uint256) private _jobDataset;
-    mapping(uint256 => bool) private _finalized;
+    mapping(uint256 jobId => JobParams jobParams) private _jobs;
+    mapping(uint256 jobId => address buyer) private _jobBuyer;
+    mapping(uint256 jobId => bool isOpen) private _jobOpen;
+    mapping(uint256 jobId => uint256 datasetId) private _jobDataset;
+    mapping(uint256 jobId => bool isFinalized) private _finalized;
 
     // Job state accumulators
-    mapping(bytes32 => uint64) private _lastUse; // keccak(buyer,datasetId) -> last finalize ts
+    mapping(bytes32 key => uint64 timestamp) private _lastUse; // keccak(buyer,datasetId) -> last finalize ts
 
-    // Merkle proof verification: track consumed rows per job
-    mapping(uint256 => mapping(uint256 => bool)) private _jobConsumedRows; // jobId => rowIndex => consumed
+    // Merkle proof verification: track last processed row per job (enforce ascending order since ops are order-independent)
+    mapping(uint256 jobId => uint256 lastRowIndex) private _jobLastProcessedRow; // jobId => lastProcessedRowIndex
 
     struct JobState {
         euint64 agg; // sum / weighted_sum accumulator
@@ -44,7 +41,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint32 kept; // encrypted counter of kept rows
         bool minMaxInit;
     }
-    mapping(uint256 => JobState) private _state;
+    mapping(uint256 jobId => JobState jobState) private _state;
 
     // ---- views ----
     function nextJobId() external view returns (uint256) {
@@ -65,7 +62,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
     // ---- lifecycle ----
     function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId) {
-        if (!datasetRegistry.doesDatasetExist(datasetId)) {
+        if (!DATASET_REGISTRY.doesDatasetExist(datasetId)) {
             revert DatasetNotFound();
         }
 
@@ -78,6 +75,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         _jobBuyer[jobId] = buyer;
         _jobOpen[jobId] = true;
         _jobDataset[jobId] = datasetId;
+        _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
 
         // Initialize job state with encrypted zeros
         _state[jobId] = JobState({
@@ -96,7 +94,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     function _isDatasetOwner(uint256 datasetId) internal view returns (bool) {
-        return datasetRegistry.isDatasetOwner(datasetId, msg.sender);
+        return DATASET_REGISTRY.isDatasetOwner(datasetId, msg.sender);
     }
 
     function _isJobOpen(uint256 jobId) internal view returns (bool) {
@@ -119,15 +117,21 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
-        // TODO: Ascending or descending order? does not matter due to the operations in our DSL
-        // so we can force one and reduce data storage
-        // 2. Check for duplicate row consumption in this job
-        if (_jobConsumedRows[jobId][rowIndex]) {
-            revert RowAlreadyConsumed();
+        // 2. Enforce ascending sequential processing (since ops are order-independent, we can force ascending order)
+        if (_jobLastProcessedRow[jobId] == type(uint256).max) {
+            // No rows processed yet, expect rowIndex == 0
+            if (rowIndex != 0) {
+                revert RowOutOfOrder();
+            }
+        } else {
+            // Expect next sequential row
+            if (rowIndex != _jobLastProcessedRow[jobId] + 1) {
+                revert RowOutOfOrder();
+            }
         }
 
         // 3. Get dataset info from registry
-        (bytes32 merkleRoot, , , , bool exists) = datasetRegistry.getDataset(datasetId);
+        (bytes32 merkleRoot, , , , bool exists) = DATASET_REGISTRY.getDataset(datasetId);
         if (!exists) {
             revert DatasetNotFound();
         }
@@ -140,13 +144,13 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert MerkleVerificationFailed();
         }
 
-        // 6. Mark row as consumed
-        _jobConsumedRows[jobId][rowIndex] = true;
+        // 6. Update last processed row index
+        _jobLastProcessedRow[jobId] = rowIndex;
 
         // 7. Decode row and process (streaming aggregation)
         euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
 
-        if (!datasetRegistry.isRowSchemaValid(datasetId, fields.length)) {
+        if (!DATASET_REGISTRY.isRowSchemaValid(datasetId, fields.length)) {
             revert InvalidRowSchema();
         }
         

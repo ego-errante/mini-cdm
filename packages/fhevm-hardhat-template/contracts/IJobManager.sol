@@ -76,7 +76,7 @@ interface IJobManager {
     error WeightsLengthMismatch(); // weightFieldIdx.length != weightVals.length
     error DatasetNotFound();
     error InvalidMerkleProof();
-    error RowAlreadyConsumed();
+    error RowOutOfOrder();
     error MerkleVerificationFailed();
     error InvalidRowSchema();
 }
