@@ -250,5 +250,39 @@ describe("Merkle Integration", function () {
         "RowPushed",
       );
     });
+
+    it("should successfully verify all elements of a dataset with odd number of rows", async () => {
+      const jobParams = createDefaultJobParams();
+
+      // Create a dataset with 3 rows (odd number)
+      const oddRowDataset = await setupTestDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        2,
+        3,
+        1,
+      );
+
+      // Open job on the odd-row dataset
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(oddRowDataset.id, signers.bob.address, jobParams),
+      ).to.emit(jobManagerContract, "JobOpened");
+
+      const jobId = 0; // Second job since we already have jobId 0 from beforeEach
+
+      // Push all rows in order (0, 1, 2)
+      for (let rowIndex = 0; rowIndex < oddRowDataset.rows.length; rowIndex++) {
+        const rowData = oddRowDataset.rows[rowIndex];
+        const merkleProof = oddRowDataset.proofs[rowIndex];
+
+        await expect(jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex))
+          .to.emit(jobManagerContract, "RowPushed")
+          .withArgs(jobId);
+      }
+
+      // Verify all 3 rows were processed
+      expect(oddRowDataset.rows.length).to.equal(3);
+    });
   });
 });

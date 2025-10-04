@@ -40,8 +40,11 @@ export async function generateMerkleTreeFromRows(rows: string[], datasetId: numb
         );
         nextLevel.push(combined);
       } else {
-        // Odd number of nodes, duplicate the last one
-        nextLevel.push(currentLevel[i]);
+        // Odd number of nodes, duplicate the last one by hashing with itself
+        const duplicated = ethers.keccak256(
+          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i]]),
+        );
+        nextLevel.push(duplicated);
       }
     }
 
@@ -84,8 +87,16 @@ export function generateMerkleProof(leaves: string[], targetIndex: number): stri
           proofElements.push(left);
         }
       } else {
-        // Odd number of nodes, just pass through
-        nextLevel.push(currentLevel[i]);
+        // Odd number of nodes, duplicate the last one by hashing with itself
+        const duplicated = ethers.keccak256(
+          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i]]),
+        );
+        nextLevel.push(duplicated);
+
+        // If this is the target node, add its duplicate as proof element
+        if (i === index) {
+          proofElements.push(currentLevel[i]); // The duplicate sibling is the node itself
+        }
       }
     }
 
@@ -104,14 +115,28 @@ export async function generateTestDatasetWithEncryption(
   contractAddress: string,
   signer: HardhatEthersSigner,
   datasetId: number = 1,
+  numRows: number = 4,
+  numColumns: number = 1,
 ) {
-  // Define default test data for 4 rows
-  const rowConfigs = [
-    [{ type: "euint8" as const, value: 42 }],
-    [{ type: "euint32" as const, value: 1337 }],
-    [{ type: "euint64" as const, value: 999999 }],
-    [{ type: "euint8" as const, value: 10 }],
+  // Define pool of test values to choose from
+  const testValues = [
+    { type: "euint8" as const, value: 42 },
+    { type: "euint32" as const, value: 1337 },
+    { type: "euint64" as const, value: 999999 },
+    { type: "euint8" as const, value: 10 },
   ];
+
+  // Generate rowConfigs dynamically based on numRows and numColumns
+  const rowConfigs = [];
+  for (let row = 0; row < numRows; row++) {
+    const rowConfig = [];
+    for (let col = 0; col < numColumns; col++) {
+      // Cycle through test values, using modulo to wrap around
+      const valueIndex = (row * numColumns + col) % testValues.length;
+      rowConfig.push(testValues[valueIndex]);
+    }
+    rowConfigs.push(rowConfig);
+  }
 
   return generateTestDatasetWithCustomConfig(contractAddress, signer, rowConfigs, datasetId);
 }
@@ -123,14 +148,14 @@ export async function generateTestDatasetWithCustomConfig(
   datasetId: number = 1,
 ) {
   const cellList = rowConfigs.flat();
-  const columns = rowConfigs[0].length;
-  const rows = await createPackedEncryptedTable(contractAddress, signer, cellList, columns);
+  const numColumns = rowConfigs[0].length;
+  const rows = await createPackedEncryptedTable(contractAddress, signer, cellList, numColumns);
 
   // Generate merkle tree from encrypted rows
   const merkleData = await generateMerkleTreeFromRows(rows, datasetId);
 
   // Compute schemaHash using same logic as DatasetRegistry.sol
-  const schemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [columns]));
+  const schemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [numColumns]));
 
   return {
     rows,
@@ -156,14 +181,17 @@ export async function setupTestDataset(
   jobManagerAddress: string,
   owner: HardhatEthersSigner,
   datasetId: number = 1,
+  numRows: number = 4,
+  numColumns: number = 1,
 ): Promise<TestDataset> {
   const dataset = createDefaultDatasetParams(datasetId);
 
-  const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId);
+  const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId, numRows, numColumns);
   dataset.rows = testData.rows;
   dataset.merkleRoot = testData.root;
   dataset.proofs = testData.proofs;
   dataset.schemaHash = testData.schemaHash;
+  dataset.rowCount = testData.rows.length;
 
   await datasetRegistry
     .connect(owner)
@@ -172,9 +200,18 @@ export async function setupTestDataset(
   return dataset;
 }
 
+export const OpCodes = {
+  WEIGHTED_SUM: 0,
+  SUM: 1,
+  AVG_P: 2,
+  COUNT: 3,
+  MIN: 4,
+  MAX: 5,
+};
+
 export function createDefaultJobParams() {
   return {
-    op: 1, // SUM
+    op: OpCodes.SUM,
     targetField: 0,
     weightFieldIdx: [],
     weightVals: [],
