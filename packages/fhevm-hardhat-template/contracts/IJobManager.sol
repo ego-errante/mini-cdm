@@ -79,4 +79,5 @@ interface IJobManager {
     error RowOutOfOrder();
     error MerkleVerificationFailed();
     error InvalidRowSchema();
+    error IncompleteProcessing();
 }

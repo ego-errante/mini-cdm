@@ -5,7 +5,8 @@ import {
     FHE,
     euint32,
     euint64,
-    ebool
+    ebool,
+    externalEuint64
 } from "@fhevm/solidity/lib/FHE.sol";
 import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IJobManager} from "./IJobManager.sol";
@@ -16,8 +17,8 @@ contract JobManager is IJobManager, SepoliaConfig {
     // ---- dependencies ----
     IDatasetRegistry public immutable DATASET_REGISTRY;
 
-    constructor(address _DATASET_REGISTRY) {
-        DATASET_REGISTRY = IDatasetRegistry(_DATASET_REGISTRY);
+    constructor(address datasetRegistry) {
+        DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
     }
 
     // ---- state ----
@@ -31,7 +32,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     // Job state accumulators
     mapping(bytes32 key => uint64 timestamp) private _lastUse; // keccak(buyer,datasetId) -> last finalize ts
 
-    // Merkle proof verification: track last processed row per job (enforce ascending order since ops are order-independent)
+    // Merkle proof verification: track last processed row per job (enforce ascending order)
     mapping(uint256 jobId => uint256 lastRowIndex) private _jobLastProcessedRow; // jobId => lastProcessedRowIndex
 
     struct JobState {
@@ -61,7 +62,11 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     // ---- lifecycle ----
-    function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId) {
+    function openJob(
+        uint256 datasetId,
+        address buyer,
+        JobParams calldata params
+    ) external returns (uint256 jobId) {
         if (!DATASET_REGISTRY.doesDatasetExist(datasetId)) {
             revert DatasetNotFound();
         }
@@ -77,14 +82,22 @@ contract JobManager is IJobManager, SepoliaConfig {
         _jobDataset[jobId] = datasetId;
         _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
 
-        // Initialize job state with encrypted zeros
+        euint64 initValue = FHE.asEuint64(0);
+
+        // Initialize job state with provided initial value
         _state[jobId] = JobState({
-            agg: FHE.asEuint64(0),
-            minV: FHE.asEuint64(0),
-            maxV: FHE.asEuint64(0),
-            kept: FHE.asEuint32(0),
+            agg: initValue,
+            minV: initValue,
+            maxV: initValue,
+            kept: FHE.asEuint32(initValue),
             minMaxInit: false
         });
+
+        FHE.allowThis(initValue);
+        FHE.allow(initValue, msg.sender);
+
+        FHE.allowThis(_state[jobId].kept);
+        FHE.allow(_state[jobId].kept, msg.sender);
 
         emit JobOpened(jobId, datasetId, msg.sender);
     }
@@ -150,6 +163,11 @@ contract JobManager is IJobManager, SepoliaConfig {
         // 7. Decode row and process (streaming aggregation)
         euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
 
+        // for (uint256 i = 0; i < fields.length; i++) {
+        //     FHE.allowThis(fields[i]);
+        //     FHE.allow(fields[i], msg.sender);
+        // }
+
         if (!DATASET_REGISTRY.isRowSchemaValid(datasetId, fields.length)) {
             revert InvalidRowSchema();
         }
@@ -170,6 +188,14 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert JobClosed();
         }
 
+        // Validate that all rows have been processed
+        uint256 datasetId = _jobDataset[jobId];
+        (, , uint256 rowCount, , ) = DATASET_REGISTRY.getDataset(datasetId);
+
+        if (_jobLastProcessedRow[jobId] != rowCount - 1) {
+            revert IncompleteProcessing();
+        }
+
         JobParams memory params = _jobs[jobId];
         JobState memory state = _state[jobId];
 
@@ -184,9 +210,13 @@ contract JobManager is IJobManager, SepoliaConfig {
         // TODO: Apply privacy gates (k-anonymity, cooldown) in Step 7
 
         _jobOpen[jobId] = false;
-        emit JobFinalized(jobId, msg.sender);
+        address buyer = _jobBuyer[jobId];
 
-        // TODO: Allow decryption for buyer in Step 11
+        FHE.allowThis(result);
+        FHE.allow(result, buyer);
+        
+        emit JobFinalized(jobId, buyer);
+
         return result;
     }
 
@@ -221,10 +251,14 @@ contract JobManager is IJobManager, SepoliaConfig {
         ebool keep
     ) internal {
         if (params.op == Op.COUNT) {
-            // COUNT: increment kept counter when filter passes
+            // COUNT: increment kept counter when filter passes            
             euint32 increment = FHE.select(keep, FHE.asEuint32(1), FHE.asEuint32(0));
+
             _state[jobId].kept = FHE.add(_state[jobId].kept, increment);
+
+            FHE.allowThis(_state[jobId].kept);
         }
+        
         // TODO: Add SUM, AVG_P, WEIGHTED_SUM, MIN, MAX in later steps
     }
 
