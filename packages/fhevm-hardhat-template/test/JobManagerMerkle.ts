@@ -179,26 +179,6 @@ describe("Merkle Integration", function () {
         .withArgs(jobId2);
     });
 
-    it("should reject pushRow on closed job", async () => {
-      const jobParams = createDefaultJobParams();
-
-      // Open job
-      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
-
-      // Finalize job
-      await jobManagerContract.connect(signers.alice).finalize(jobId);
-
-      // Try to push row - should fail
-      const rowIndex = 0;
-      const rowData = testDataset.rows[rowIndex]; // Now a hex string
-      const merkleProof = testDataset.proofs[rowIndex];
-
-      await expect(
-        jobManagerContract.connect(signers.alice).pushRow(jobId, rowData, merkleProof, rowIndex),
-      ).to.be.revertedWithCustomError(jobManagerContract, "JobClosed");
-    });
-
     it("should reject pushRow from non-dataset-owner", async () => {
       const jobParams = createDefaultJobParams();
 

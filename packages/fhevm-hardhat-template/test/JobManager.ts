@@ -2,7 +2,8 @@ import { JobManager } from "../types";
 import { DatasetRegistry } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
+import { ethers, fhevm } from "hardhat";
+import { FhevmType } from "@fhevm/hardhat-plugin";
 import {
   createDefaultJobParams,
   Signers,
@@ -12,6 +13,7 @@ import {
   TestDataset,
   OpCodes,
 } from "./utils";
+import { TransactionReceipt } from "ethers";
 
 describe("JobManager", function () {
   let signers: Signers;
@@ -167,66 +169,43 @@ describe("JobManager", function () {
     // });
   });
 
-  // describe("finalize", () => {
-  //   it("should emit JobFinalized event when finalizing a job", async () => {
-  //     // Open a job
-  //     const jobParams = createDefaultJobParams();
-
-  //     await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.deployer.address, jobParams);
-  //     const jobId = 0;
-
-  //     // Finalize the job and expect JobFinalized event
-  //     await expect(jobManagerContract.connect(signers.alice).finalize(jobId))
-  //       .to.emit(jobManagerContract, "JobFinalized")
-  //       .withArgs(jobId, signers.alice.address);
-
-  //     // Verify job is closed after finalization
-  //     expect(await jobManagerContract.jobOpen(jobId)).to.be.false;
-  //   });
-  // });
-
-  describe("computation", () => {
-    it("should count all rows when using COUNT operation with empty filter", async () => {
-      // Create COUNT operation parameters (op = 3 for COUNT)
-      const countJobParams = {
-        ...createDefaultJobParams(),
-        op: 3, // COUNT operation
-        filter: {
-          bytecode: "0x", // Empty filter - accept all rows
-          consts: [],
-        },
-      };
-
-      // Open a job with COUNT operation
-      await jobManagerContract.connect(testDatasetOwner).openJob(testDataset.id, signers.bob.address, countJobParams);
+  describe("finalize", () => {
+    it("should finalize a job successfully", async () => {
       const jobId = 0;
 
-      // Push all 3 rows
-      for (let i = 0; i < testDataset.rows.length; i++) {
-        await jobManagerContract
-          .connect(testDatasetOwner)
-          .pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
-      }
+      // Execute a job
+      const receipt = await executeCountJob(jobManagerContract, signers.alice, testDataset, signers.bob);
 
-      // Finalize the job - should return encrypted count (3)
-      const result = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
+      // Verify JobFinalized event is emitted
+      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+      expect(jobFinalizedEvent?.jobId).to.equal(jobId);
+      expect(jobFinalizedEvent?.buyer).to.equal(signers.bob.address);
 
       // Verify job is closed after finalization
       expect(await jobManagerContract.jobOpen(jobId)).to.be.false;
 
-      // Verify result is not zero (since we counted 3 rows)
-      // Note: We can't decrypt the result directly in tests, but we can verify it's not the zero ciphertext
-      expect(result).to.not.equal(0);
+      // Even the seller should be unable to decrypt the result
+      await expect(
+        fhevm.userDecryptEuint(FhevmType.euint64, jobFinalizedEvent?.result, jobManagerContractAddress, signers.alice),
+      ).to.be.rejected;
 
-      // Verify job cannot be finalized again (should revert)
+      // Verify buyer can decrypt the result
+      await fhevm.userDecryptEuint(
+        FhevmType.euint64,
+        jobFinalizedEvent?.result,
+        jobManagerContractAddress,
+        signers.bob,
+      );
+
+      // Attempting to finalize again should revert with JobClosed error
       await expect(jobManagerContract.connect(signers.alice).finalize(jobId)).to.be.revertedWithCustomError(
         jobManagerContract,
         "JobClosed",
       );
     });
 
-    it("should return zero count for COUNT operation with no rows pushed", async () => {
-      // Create COUNT operation parameters
+    it("should prevent finalizing job before processing all rows", async () => {
       const countJobParams = {
         ...createDefaultJobParams(),
         op: OpCodes.COUNT,
@@ -237,18 +216,35 @@ describe("JobManager", function () {
       };
 
       // Open a job with COUNT operation
-      await jobManagerContract.connect(testDatasetOwner).openJob(testDataset.id, signers.alice.address, countJobParams);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, countJobParams);
       const jobId = 0;
 
-      // Finalize without pushing any rows
-      const result = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
+      // Push only the first row (not all rows)
+      await jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
 
-      // Verify job is closed after finalization
-      expect(await jobManagerContract.jobOpen(jobId)).to.be.false;
+      // Attempting to finalize before processing all rows should revert with IncompleteProcessing error
+      await expect(jobManagerContract.connect(signers.alice).finalize(jobId)).to.be.revertedWithCustomError(
+        jobManagerContract,
+        "IncompleteProcessing",
+      );
+    });
+  });
 
-      // The result should be zero (no rows counted)
-      // Note: We can't decrypt directly, but this verifies the operation completes
-      expect(result).to.not.equal(0); // Should still return a valid ciphertext
+  describe("computation", () => {
+    it("should count all rows when using COUNT operation with empty filter", async () => {
+      const receipt = await executeCountJob(jobManagerContract, signers.alice, testDataset, signers.bob);
+
+      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+      const decryptedResult = await fhevm.userDecryptEuint(
+        FhevmType.euint64,
+        jobFinalizedEvent?.result,
+        jobManagerContractAddress,
+        signers.bob,
+      );
+
+      // Verify the decrypted count matches the number of rows pushed
+      expect(decryptedResult).to.equal(BigInt(testDataset.rows.length));
     });
 
     // it("should track last use timestamp for cooldown", async () => {
@@ -258,3 +254,41 @@ describe("JobManager", function () {
     // });
   });
 });
+
+async function executeCountJob(
+  jobManagerContract: JobManager,
+  testDatasetOwner: HardhatEthersSigner,
+  testDataset: TestDataset,
+  buyer: HardhatEthersSigner,
+) {
+  const countJobParams = {
+    ...createDefaultJobParams(),
+    op: OpCodes.COUNT,
+    filter: {
+      bytecode: "0x", // Empty filter - accept all rows
+      consts: [],
+    },
+  };
+
+  // Open a job with COUNT operation
+  await jobManagerContract.connect(testDatasetOwner).openJob(testDataset.id, buyer, countJobParams);
+  const jobId = 0;
+
+  // Push all rows
+  for (let i = 0; i < testDataset.rows.length; i++) {
+    await jobManagerContract.connect(testDatasetOwner).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
+  }
+
+  // Finalize the job - should return encrypted count
+  const tx = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
+  return await tx.wait();
+}
+
+function parseJobFinalizedEvent(jobManagerContract: JobManager, receipt: TransactionReceipt | null) {
+  if (!receipt) {
+    return undefined;
+  }
+
+  return receipt.logs.map((log) => jobManagerContract.interface.parseLog(log)).find((e) => e?.name === "JobFinalized")!
+    .args;
+}

@@ -60,12 +60,12 @@ interface IJobManager {
         uint256 rowIndex
     ) external;
 
-    function finalize(uint256 jobId) external returns (euint64 result); // sealed; decryption allowed only if policy passes
+    function finalize(uint256 jobId) external; // sealed; decryption allowed only if policy passes
 
     // ---- events ----
     event JobOpened(uint256 indexed jobId, uint256 indexed datasetId, address indexed buyer);
     event RowPushed(uint256 indexed jobId);
-    event JobFinalized(uint256 indexed jobId, address indexed buyer);
+    event JobFinalized(uint256 indexed jobId, address indexed buyer, euint64 result);
 
     // ---- errors ----
     error JobClosed();

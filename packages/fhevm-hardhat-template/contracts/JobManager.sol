@@ -17,17 +17,23 @@ contract JobManager is IJobManager, SepoliaConfig {
     // ---- dependencies ----
     IDatasetRegistry public immutable DATASET_REGISTRY;
 
+    // ---- structs ----
+    struct Job {
+        JobParams params;
+        address buyer;
+        uint256 datasetId;
+        bool isOpen;
+        bool isFinalized;
+        euint64 result;
+    }
+
     constructor(address datasetRegistry) {
         DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
     }
 
     // ---- state ----
     uint256 private _nextJobId;
-    mapping(uint256 jobId => JobParams jobParams) private _jobs;
-    mapping(uint256 jobId => address buyer) private _jobBuyer;
-    mapping(uint256 jobId => bool isOpen) private _jobOpen;
-    mapping(uint256 jobId => uint256 datasetId) private _jobDataset;
-    mapping(uint256 jobId => bool isFinalized) private _finalized;
+    mapping(uint256 jobId => Job job) private _jobs;
 
     // Job state accumulators
     mapping(bytes32 key => uint64 timestamp) private _lastUse; // keccak(buyer,datasetId) -> last finalize ts
@@ -50,15 +56,15 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     function jobBuyer(uint256 jobId) external view returns (address) {
-        return _jobBuyer[jobId];
+        return _jobs[jobId].buyer;
     }
 
     function jobOpen(uint256 jobId) external view returns (bool) {
-        return _jobOpen[jobId];
+        return _jobs[jobId].isOpen;
     }
 
     function jobDataset(uint256 jobId) external view returns (uint256) {
-        return _jobDataset[jobId];
+        return _jobs[jobId].datasetId;
     }
 
     // ---- lifecycle ----
@@ -75,14 +81,19 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
-        jobId = _nextJobId++;
-        _jobs[jobId] = params;
-        _jobBuyer[jobId] = buyer;
-        _jobOpen[jobId] = true;
-        _jobDataset[jobId] = datasetId;
-        _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
-
         euint64 initValue = FHE.asEuint64(0);
+
+        jobId = _nextJobId++;
+        _jobs[jobId] = Job({
+            params: params,
+            buyer: buyer,
+            datasetId: datasetId,
+            isOpen: true,
+            isFinalized: false,
+            result: initValue
+        });
+
+        _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
 
         // Initialize job state with provided initial value
         _state[jobId] = JobState({
@@ -103,7 +114,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     function _isJobBuyer(uint256 jobId) internal view returns (bool) {
-        return _jobBuyer[jobId] == msg.sender;
+        return _jobs[jobId].buyer == msg.sender;
     }
 
     function _isDatasetOwner(uint256 datasetId) internal view returns (bool) {
@@ -111,7 +122,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     function _isJobOpen(uint256 jobId) internal view returns (bool) {
-        return _jobOpen[jobId];
+        return _jobs[jobId].isOpen;
     }
 
     function pushRow(
@@ -125,7 +136,7 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert JobClosed();
         }
 
-        uint256 datasetId = _jobDataset[jobId];
+        uint256 datasetId = _jobs[jobId].datasetId;
         if (!_isDatasetOwner(datasetId)) {
             revert NotDatasetOwner();
         }
@@ -171,8 +182,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         if (!DATASET_REGISTRY.isRowSchemaValid(datasetId, fields.length)) {
             revert InvalidRowSchema();
         }
-        
-        JobParams memory params = _jobs[jobId];
+
+        JobParams memory params = _jobs[jobId].params;
 
         // 8. Evaluate filter (Step 3: Filter VM skeleton)
         ebool keep = _evalFilter(params.filter, fields);
@@ -183,22 +194,23 @@ contract JobManager is IJobManager, SepoliaConfig {
         emit RowPushed(jobId);
     }
 
-    function finalize(uint256 jobId) external returns (euint64 result) {
+    function finalize(uint256 jobId) external {
         if (!_isJobOpen(jobId)) {
             revert JobClosed();
         }
 
         // Validate that all rows have been processed
-        uint256 datasetId = _jobDataset[jobId];
+        uint256 datasetId = _jobs[jobId].datasetId;
         (, , uint256 rowCount, , ) = DATASET_REGISTRY.getDataset(datasetId);
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();
         }
 
-        JobParams memory params = _jobs[jobId];
+        JobParams memory params = _jobs[jobId].params;
         JobState memory state = _state[jobId];
 
+        euint64 result;
         // For now, only COUNT is implemented - return kept counter
         if (params.op == Op.COUNT) {
             result = FHE.asEuint64(state.kept);
@@ -209,15 +221,16 @@ contract JobManager is IJobManager, SepoliaConfig {
         // TODO: Apply post-processing (clamp, roundBucket) in Step 6
         // TODO: Apply privacy gates (k-anonymity, cooldown) in Step 7
 
-        _jobOpen[jobId] = false;
-        address buyer = _jobBuyer[jobId];
+        _jobs[jobId].isOpen = false;
+        _jobs[jobId].isFinalized = true;
+        _jobs[jobId].result = result;
+        
+        address buyer = _jobs[jobId].buyer;
 
         FHE.allowThis(result);
         FHE.allow(result, buyer);
-        
-        emit JobFinalized(jobId, buyer);
 
-        return result;
+        emit JobFinalized(jobId, buyer, result);
     }
 
     // ---- Step 3: Filter VM skeleton ----
