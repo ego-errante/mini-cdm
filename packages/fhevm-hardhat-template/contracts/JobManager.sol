@@ -12,7 +12,6 @@ import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
 import {RowDecoder} from "./RowDecoder.sol";
-
 contract JobManager is IJobManager, SepoliaConfig {
     // ---- dependencies ----
     IDatasetRegistry public immutable DATASET_REGISTRY;
@@ -105,10 +104,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         });
 
         FHE.allowThis(initValue);
-        FHE.allow(initValue, msg.sender);
 
         FHE.allowThis(_state[jobId].kept);
-        FHE.allow(_state[jobId].kept, msg.sender);
 
         emit JobOpened(jobId, datasetId, msg.sender);
     }
@@ -136,11 +133,6 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert JobClosed();
         }
 
-        uint256 datasetId = _jobs[jobId].datasetId;
-        if (!_isDatasetOwner(datasetId)) {
-            revert NotDatasetOwner();
-        }
-
         // 2. Enforce ascending sequential processing (since ops are order-independent, we can force ascending order)
         if (_jobLastProcessedRow[jobId] == type(uint256).max) {
             // No rows processed yet, expect rowIndex == 0
@@ -154,11 +146,13 @@ contract JobManager is IJobManager, SepoliaConfig {
             }
         }
 
-        // 3. Get dataset info from registry
-        (bytes32 merkleRoot, , , , bool exists) = DATASET_REGISTRY.getDataset(datasetId);
-        if (!exists) {
-            revert DatasetNotFound();
+        uint256 datasetId = _jobs[jobId].datasetId;
+        if (!_isDatasetOwner(datasetId)) {
+            revert NotDatasetOwner();
         }
+
+        // 3. Get dataset info from registry
+        (bytes32 merkleRoot, , , ,) = DATASET_REGISTRY.getDataset(datasetId);
 
         // 4. Compute expected leaf hash: keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked))
         bytes32 expectedLeaf = keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked));
@@ -173,11 +167,6 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // 7. Decode row and process (streaming aggregation)
         euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
-
-        // for (uint256 i = 0; i < fields.length; i++) {
-        //     FHE.allowThis(fields[i]);
-        //     FHE.allow(fields[i], msg.sender);
-        // }
 
         if (!DATASET_REGISTRY.isRowSchemaValid(datasetId, fields.length)) {
             revert InvalidRowSchema();
@@ -211,9 +200,11 @@ contract JobManager is IJobManager, SepoliaConfig {
         JobState memory state = _state[jobId];
 
         euint64 result;
-        // For now, only COUNT is implemented - return kept counter
+        // Return appropriate result based on operation type
         if (params.op == Op.COUNT) {
             result = FHE.asEuint64(state.kept);
+        } else if (params.op == Op.SUM) {
+            result = state.agg; // Return the accumulated sum
         } else {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
@@ -256,23 +247,32 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @notice Updates job accumulators based on operation type and filter result
     /// @param jobId The job ID
     /// @param params The job parameters
+    /// @param fields The decrypted row fields
     /// @param keep Whether to include this row (from filter evaluation)
     function _updateAccumulators(
         uint256 jobId,
         JobParams memory params,
-        euint64[] memory /* fields */,
+        euint64[] memory fields,
         ebool keep
     ) internal {
         if (params.op == Op.COUNT) {
-            // COUNT: increment kept counter when filter passes            
+            // COUNT: increment kept counter when filter passes
             euint32 increment = FHE.select(keep, FHE.asEuint32(1), FHE.asEuint32(0));
 
             _state[jobId].kept = FHE.add(_state[jobId].kept, increment);
 
             FHE.allowThis(_state[jobId].kept);
+        } else if (params.op == Op.SUM) {
+            // SUM: add target field value when filter passes
+            euint64 targetValue = fields[params.targetField];
+            euint64 increment = FHE.select(keep, targetValue, FHE.asEuint64(0));
+
+            _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
+
+            FHE.allowThis(_state[jobId].agg);
         }
-        
-        // TODO: Add SUM, AVG_P, WEIGHTED_SUM, MIN, MAX in later steps
+
+        // TODO: Add AVG_P, WEIGHTED_SUM, MIN, MAX in later steps
     }
 
     /// @notice Verifies a merkle proof against the expected leaf and root

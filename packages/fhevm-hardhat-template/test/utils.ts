@@ -13,6 +13,11 @@ export interface TestDataset {
   rowCount: number;
 }
 
+export interface RowConfig {
+  type: "euint8" | "euint32" | "euint64";
+  value: number;
+}
+
 // Test utilities
 export async function generateMerkleTreeFromRows(rows: string[], datasetId: number) {
   if (rows.length === 0) {
@@ -144,7 +149,7 @@ export async function generateTestDatasetWithEncryption(
 export async function generateTestDatasetWithCustomConfig(
   contractAddress: string,
   signer: HardhatEthersSigner,
-  rowConfigs: { type: "euint8" | "euint32" | "euint64"; value: number }[][],
+  rowConfigs: RowConfig[][],
   datasetId: number = 1,
 ) {
   const cellList = rowConfigs.flat();

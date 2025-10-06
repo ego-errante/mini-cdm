@@ -42,9 +42,6 @@ library RowDecoder {
             (euint64 field, uint256 newIndex) = _decodeFieldAt(rowPacked, i);
             fields[f] = field;
             i = newIndex;
-
-            FHE.allowThis(fields[f]);
-            FHE.allow(fields[f], msg.sender);
         }
     }
 
