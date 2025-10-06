@@ -72,7 +72,6 @@ interface IJobManager {
     error KAnonymityNotMet();
     error NotJobBuyer();
     error NotDatasetOwner();
-    error WeightsLengthMismatch();
     error DatasetNotFound();
     error InvalidMerkleProof();
     error RowOutOfOrder();
@@ -80,4 +79,5 @@ interface IJobManager {
     error InvalidRowSchema();
     error IncompleteProcessing();
     error CannotDivideByZero();
+    error WeightsLengthMismatch();
 }

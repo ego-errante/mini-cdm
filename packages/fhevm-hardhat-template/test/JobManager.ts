@@ -639,6 +639,178 @@ describe("JobManager", function () {
       expect(decryptedResult).to.equal(expectedWeightedSum);
     });
 
+    it("MIN: should find minimum value in target column", async () => {
+      const datasetId = 5;
+      const dataset = createDefaultDatasetParams(datasetId);
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with values that have clear minimums
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 50 }, // field 0: will be max
+          { type: "euint8", value: 10 }, // field 1: will be min
+        ],
+        [
+          { type: "euint32", value: 25 }, // field 0: min so far
+          { type: "euint32", value: 40 }, // field 1: not min
+        ],
+        [
+          { type: "euint64", value: 75 }, // field 0: max so far
+          { type: "euint64", value: 5 }, // field 1: new min
+        ],
+        [
+          { type: "euint8", value: 30 }, // field 0: not min
+          { type: "euint8", value: 15 }, // field 1: not min
+        ],
+      ] as RowConfig[][];
+
+      const testData = await generateTestDatasetWithCustomConfig(
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      dataset.rows = testData.rows;
+      dataset.merkleRoot = testData.root;
+      dataset.proofs = testData.proofs;
+      dataset.numColumns = testData.numColumns;
+      dataset.rowCount = testData.rows.length;
+
+      await datasetRegistryContract
+        .connect(datasetOwner)
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+
+      // Test MIN operation on both columns
+      const targetColumns = [0, 1];
+      const expectedMins = [25, 5]; // field 0 min = 25, field 1 min = 5
+      const jobIds = [0, 1];
+
+      for (let i = 0; i < targetColumns.length; i++) {
+        const targetColumn = targetColumns[i];
+        const minJobParams = {
+          ...createDefaultJobParams(),
+          targetField: targetColumn,
+          op: OpCodes.MIN,
+          filter: {
+            bytecode: "0x", // Empty filter - accept all rows
+            consts: [],
+          },
+        };
+
+        // Open a job with MIN operation
+        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, minJobParams);
+        const jobId = jobIds[i];
+
+        // Push all rows
+        for (let j = 0; j < dataset.rows.length; j++) {
+          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
+        }
+
+        // Finalize the job - should return encrypted minimum
+        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+        const receipt = await tx.wait();
+        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+        const decryptedResult = await fhevm.userDecryptEuint(
+          FhevmType.euint64,
+          jobFinalizedEvent?.result,
+          jobManagerContractAddress,
+          signers.bob,
+        );
+
+        // Verify the minimum value is returned
+        expect(decryptedResult).to.equal(BigInt(expectedMins[i]));
+      }
+    });
+
+    it("MAX: should find maximum value in target column", async () => {
+      const datasetId = 6;
+      const dataset = createDefaultDatasetParams(datasetId);
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with values that have clear maximums
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 50 }, // field 0: will be max
+          { type: "euint8", value: 10 }, // field 1: will be min
+        ],
+        [
+          { type: "euint32", value: 25 }, // field 0: not max
+          { type: "euint32", value: 40 }, // field 1: not max
+        ],
+        [
+          { type: "euint64", value: 75 }, // field 0: new max
+          { type: "euint64", value: 5 }, // field 1: not max
+        ],
+        [
+          { type: "euint8", value: 30 }, // field 0: not max
+          { type: "euint8", value: 85 }, // field 1: new max
+        ],
+      ] as RowConfig[][];
+
+      const testData = await generateTestDatasetWithCustomConfig(
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      dataset.rows = testData.rows;
+      dataset.merkleRoot = testData.root;
+      dataset.proofs = testData.proofs;
+      dataset.numColumns = testData.numColumns;
+      dataset.rowCount = testData.rows.length;
+
+      await datasetRegistryContract
+        .connect(datasetOwner)
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+
+      // Test MAX operation on both columns
+      const targetColumns = [0, 1];
+      const expectedMaxes = [75, 85]; // field 0 max = 75, field 1 max = 85
+      const jobIds = [0, 1];
+
+      for (let i = 0; i < targetColumns.length; i++) {
+        const targetColumn = targetColumns[i];
+        const maxJobParams = {
+          ...createDefaultJobParams(),
+          targetField: targetColumn,
+          op: OpCodes.MAX,
+          filter: {
+            bytecode: "0x", // Empty filter - accept all rows
+            consts: [],
+          },
+        };
+
+        // Open a job with MAX operation
+        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, maxJobParams);
+        const jobId = jobIds[i];
+
+        // Push all rows
+        for (let j = 0; j < dataset.rows.length; j++) {
+          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
+        }
+
+        // Finalize the job - should return encrypted maximum
+        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+        const receipt = await tx.wait();
+        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+        const decryptedResult = await fhevm.userDecryptEuint(
+          FhevmType.euint64,
+          jobFinalizedEvent?.result,
+          jobManagerContractAddress,
+          signers.bob,
+        );
+
+        // Verify the maximum value is returned
+        expect(decryptedResult).to.equal(BigInt(expectedMaxes[i]));
+      }
+    });
+
     // it("should track last use timestamp for cooldown", async () => {
   });
 });

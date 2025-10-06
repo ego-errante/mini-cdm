@@ -45,7 +45,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint64 minV;
         euint64 maxV;
         euint32 kept; // encrypted counter of kept rows
-        bool minMaxInit;
+        ebool minMaxInit;
     }
     mapping(uint256 jobId => JobState jobState) private _state;
 
@@ -87,13 +87,14 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         if (params.op == Op.WEIGHTED_SUM) {
             // Get expected field count from dataset registry
-            (, , uint256 expectedFieldCount, , ) = DATASET_REGISTRY.getDataset(datasetId);
-            if (params.weights.length > expectedFieldCount) {
+            (, uint256 numColumns, , , ) = DATASET_REGISTRY.getDataset(datasetId);
+            if (params.weights.length != numColumns) {
                 revert WeightsLengthMismatch();
             }
         }
 
         euint64 initValue = FHE.asEuint64(0);
+        ebool initMinMaxInit = FHE.asEbool(false);
 
         jobId = _nextJobId++;
         _jobs[jobId] = Job({
@@ -113,12 +114,12 @@ contract JobManager is IJobManager, SepoliaConfig {
             minV: initValue,
             maxV: initValue,
             kept: FHE.asEuint32(initValue),
-            minMaxInit: false
+            minMaxInit: initMinMaxInit
         });
 
         FHE.allowThis(initValue);
-
         FHE.allowThis(_state[jobId].kept);
+        FHE.allowThis(initMinMaxInit);
 
         emit JobOpened(jobId, datasetId, msg.sender);
     }
@@ -223,6 +224,10 @@ contract JobManager is IJobManager, SepoliaConfig {
             result = FHE.div(state.agg, params.divisor);
         } else if (params.op == Op.WEIGHTED_SUM) {
             result = state.agg; // Return the accumulated weighted sum
+        } else if (params.op == Op.MIN) {
+            result = state.minV; // Return the minimum value
+        } else if (params.op == Op.MAX) {
+            result = state.maxV; // Return the maximum value
         } else {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
@@ -305,6 +310,42 @@ contract JobManager is IJobManager, SepoliaConfig {
             _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
 
             FHE.allowThis(_state[jobId].agg);
+        } else if (params.op == Op.MIN) {
+            // MIN: track minimum value of target field when filter passes
+            euint64 targetValue = fields[params.targetField];
+            euint64 currentMin = _state[jobId].minV;
+            ebool isInitialized = _state[jobId].minMaxInit;
+
+            // if not initialized, new min is target value if row is kept, otherwise current value (0)
+            euint64 minIfNotInit = FHE.select(keep, targetValue, currentMin);
+            // if initialized, new min is min(current, target) if row is kept, otherwise current value
+            euint64 minIfInit = FHE.select(keep, FHE.min(currentMin, targetValue), currentMin);
+
+            // select between the two based on whether we were already initialized
+            _state[jobId].minV = FHE.select(isInitialized, minIfInit, minIfNotInit);
+            // new state is (isInitialized OR keep)
+            _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
+
+            FHE.allowThis(_state[jobId].minV);
+            FHE.allowThis(_state[jobId].minMaxInit);
+        } else if (params.op == Op.MAX) {
+            // MAX: track maximum value of target field when filter passes
+            euint64 targetValue = fields[params.targetField];
+            euint64 currentMax = _state[jobId].maxV;
+            ebool isInitialized = _state[jobId].minMaxInit;
+
+            // if not initialized, new max is target value if row is kept, otherwise current value (0)
+            euint64 maxIfNotInit = FHE.select(keep, targetValue, currentMax);
+            // if initialized, new max is max(current, target) if row is kept, otherwise current value
+            euint64 maxIfInit = FHE.select(keep, FHE.max(currentMax, targetValue), currentMax);
+
+            // select between the two based on whether we were already initialized
+            _state[jobId].maxV = FHE.select(isInitialized, maxIfInit, maxIfNotInit);
+            // new state is (isInitialized OR keep)
+            _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
+
+            FHE.allowThis(_state[jobId].maxV);
+            FHE.allowThis(_state[jobId].minMaxInit);
         }
     }
 
