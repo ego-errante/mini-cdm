@@ -25,8 +25,7 @@ interface IJobManager {
     struct JobParams {
         Op op;
         uint16 targetField; // for SUM/AVG_P/MIN/MAX; ignored for WEIGHTED_SUM
-        uint16[] weightFieldIdx; // sparse indices for WEIGHTED_SUM (e.g., [0,2,5])
-        int16[] weightVals; // matching weights (e.g., [1,-1,3])
+        uint16[] weights; // weights for WEIGHTED_SUM (weights[i] applies to field i)
         uint32 divisor; // plaintext divisor (0 if unused)
         uint32 k; // k-anonymity threshold
         uint32 cooldownSec; // per (buyer,dataset) cooldown
@@ -73,7 +72,7 @@ interface IJobManager {
     error KAnonymityNotMet();
     error NotJobBuyer();
     error NotDatasetOwner();
-    error WeightsLengthMismatch(); // weightFieldIdx.length != weightVals.length
+    error WeightsLengthMismatch();
     error DatasetNotFound();
     error InvalidMerkleProof();
     error RowOutOfOrder();

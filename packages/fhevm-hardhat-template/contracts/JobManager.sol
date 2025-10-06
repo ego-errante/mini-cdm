@@ -85,6 +85,14 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert CannotDivideByZero();
         }
 
+        if (params.op == Op.WEIGHTED_SUM) {
+            // Get expected field count from dataset registry
+            (, , uint256 expectedFieldCount, , ) = DATASET_REGISTRY.getDataset(datasetId);
+            if (params.weights.length > expectedFieldCount) {
+                revert WeightsLengthMismatch();
+            }
+        }
+
         euint64 initValue = FHE.asEuint64(0);
 
         jobId = _nextJobId++;
@@ -213,6 +221,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         } else if (params.op == Op.AVG_P) {
             // Apply divisor to get average
             result = FHE.div(state.agg, params.divisor);
+        } else if (params.op == Op.WEIGHTED_SUM) {
+            result = state.agg; // Return the accumulated weighted sum
         } else {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
@@ -278,9 +288,24 @@ contract JobManager is IJobManager, SepoliaConfig {
             _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
 
             FHE.allowThis(_state[jobId].agg);
-        }
+        } else if (params.op == Op.WEIGHTED_SUM) {
+            // WEIGHTED_SUM: compute weighted sum of fields using sequential indices when filter passes
+            euint64 weightedSum = FHE.asEuint64(0);
 
-        // TODO: Add AVG_P, WEIGHTED_SUM, MIN, MAX in later steps
+            for (uint256 i = 0; i < params.weights.length; i++) {
+                uint16 weight = params.weights[i];
+                euint64 fieldValue = fields[i];
+                euint64 weightedValue = FHE.mul(fieldValue, uint64(weight));
+
+                weightedSum = FHE.add(weightedSum, weightedValue);
+            }
+
+            // Add weighted sum to accumulator when filter passes
+            euint64 increment = FHE.select(keep, weightedSum, FHE.asEuint64(0));
+            _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
+
+            FHE.allowThis(_state[jobId].agg);
+        }
     }
 
     /// @notice Verifies a merkle proof against the expected leaf and root

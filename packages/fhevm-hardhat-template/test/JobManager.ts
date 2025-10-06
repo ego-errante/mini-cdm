@@ -548,6 +548,97 @@ describe("JobManager", function () {
       }
     });
 
+    it("WEIGHTED_SUM: should compute weighted sum of specified fields", async () => {
+      const datasetId = 4;
+      const dataset = createDefaultDatasetParams(datasetId);
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with 3 columns for weighted sum testing
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 10 }, // field 0
+          { type: "euint8", value: 20 }, // field 1
+          { type: "euint8", value: 30 }, // field 2
+        ],
+        [
+          { type: "euint32", value: 15 },
+          { type: "euint32", value: 25 },
+          { type: "euint32", value: 35 },
+        ],
+        [
+          { type: "euint64", value: 5 },
+          { type: "euint64", value: 10 },
+          { type: "euint64", value: 15 },
+        ],
+        [
+          { type: "euint8", value: 8 },
+          { type: "euint8", value: 12 },
+          { type: "euint8", value: 16 },
+        ],
+      ] as RowConfig[][];
+
+      const testData = await generateTestDatasetWithCustomConfig(
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      dataset.rows = testData.rows;
+      dataset.merkleRoot = testData.root;
+      dataset.proofs = testData.proofs;
+      dataset.schemaHash = testData.schemaHash;
+      dataset.rowCount = testData.rows.length;
+
+      await datasetRegistryContract
+        .connect(datasetOwner)
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+
+      // Test weighted sum: (field0 * 2) + (field1 * 1) + (field2 * 3)
+      const weights = [2, 1, 3]; // weights for fields 0, 1, 2 respectively
+
+      const weightedSumJobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.WEIGHTED_SUM,
+        weights: weights,
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      // Open a job with WEIGHTED_SUM operation
+      await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, weightedSumJobParams);
+      const jobId = 0;
+
+      // Push all rows
+      for (let i = 0; i < dataset.rows.length; i++) {
+        await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
+      }
+
+      // Finalize the job - should return encrypted weighted sum
+      const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+      const receipt = await tx.wait();
+      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+      const decryptedResult = await fhevm.userDecryptEuint(
+        FhevmType.euint64,
+        jobFinalizedEvent?.result,
+        jobManagerContractAddress,
+        signers.bob,
+      );
+
+      // Expected calculation:
+      // Row 0: (10 * 2) + (20 * 1) + (30 * 3) = 20 + 20 + 90 = 130
+      // Row 1: (15 * 2) + (25 * 1) + (35 * 3) = 30 + 25 + 105 = 160
+      // Row 2: (5 * 2) + (10 * 1) + (15 * 3) = 10 + 10 + 45 = 65
+      // Row 3: (8 * 2) + (12 * 1) + (16 * 3) = 16 + 12 + 48 = 76
+      // Total: 130 + 160 + 65 + 76 = 431
+      const expectedWeightedSum = BigInt(431);
+      expect(decryptedResult).to.equal(expectedWeightedSum);
+    });
+
     // it("should track last use timestamp for cooldown", async () => {
   });
 });
