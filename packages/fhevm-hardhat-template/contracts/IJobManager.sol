@@ -80,4 +80,5 @@ interface IJobManager {
     error MerkleVerificationFailed();
     error InvalidRowSchema();
     error IncompleteProcessing();
+    error CannotDivideByZero();
 }

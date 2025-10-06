@@ -132,6 +132,26 @@ describe("JobManager", function () {
         jobManagerContract.connect(signers.bob).openJob(testDataset.id, signers.bob.address, jobParams),
       ).to.be.revertedWithCustomError(jobManagerContract, "NotDatasetOwner");
     });
+
+    it("should reject openJob when divisor is zero for operations that use it", async () => {
+      const operationsToUseDivisor = [OpCodes.AVG_P];
+      for (const op of operationsToUseDivisor) {
+        const jobParams = {
+          ...createDefaultJobParams(),
+          op: op,
+          divisor: 0, // Division by zero should be rejected
+          filter: {
+            bytecode: "0x", // Empty filter - accept all rows
+            consts: [],
+          },
+        };
+
+        // Alice tries to open job with AVG_P and divisor = 0
+        await expect(
+          jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice.address, jobParams),
+        ).to.be.revertedWithCustomError(jobManagerContract, "CannotDivideByZero");
+      }
+    });
   });
 
   describe("pushRow", () => {
@@ -342,7 +362,7 @@ describe("JobManager", function () {
   });
 
   describe("computation", () => {
-    it("should count all rows when using COUNT operation with empty filter", async () => {
+    it("COUNT: should count all rows when using empty filter", async () => {
       const receipt = await executeCountJob(jobManagerContract, signers.alice, testDataset, signers.bob);
 
       const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
@@ -358,7 +378,7 @@ describe("JobManager", function () {
       expect(decryptedResult).to.equal(BigInt(testDataset.rows.length));
     });
 
-    it("should sum target columnn values across all rows", async () => {
+    it("SUM: should sum target columnn values across all rows", async () => {
       const datasetId = 2;
       const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
@@ -438,6 +458,93 @@ describe("JobManager", function () {
 
         const targetColumnTotalSum = rowConfigs.reduce((acc, row) => acc + row[targetColumn].value, 0);
         expect(decryptedResult).to.equal(BigInt(targetColumnTotalSum));
+      }
+    });
+
+    it("AVG_P: should compute average of target column values using plaintext divisor", async () => {
+      const datasetId = 3;
+      const dataset = createDefaultDatasetParams(datasetId);
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+      const divisor = 2; // Use divisor of 2 for averaging
+
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 10 },
+          { type: "euint8", value: 20 },
+        ],
+        [
+          { type: "euint32", value: 30 },
+          { type: "euint32", value: 40 },
+        ],
+        [
+          { type: "euint64", value: 50 },
+          { type: "euint64", value: 60 },
+        ],
+        [
+          { type: "euint8", value: 70 },
+          { type: "euint8", value: 80 },
+        ],
+      ] as RowConfig[][];
+
+      const testData = await generateTestDatasetWithCustomConfig(
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      dataset.rows = testData.rows;
+      dataset.merkleRoot = testData.root;
+      dataset.proofs = testData.proofs;
+      dataset.schemaHash = testData.schemaHash;
+      dataset.rowCount = testData.rows.length;
+
+      await datasetRegistryContract
+        .connect(datasetOwner)
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+
+      // Open jobs for each target column
+      const targetColumns = [0, 1];
+      const jobIds = [0, 1];
+      for (let i = 0; i < targetColumns.length; i++) {
+        const targetColumn = targetColumns[i];
+        const avgJobParams = {
+          ...createDefaultJobParams(),
+          targetField: targetColumn,
+          op: OpCodes.AVG_P,
+          divisor: divisor,
+          filter: {
+            bytecode: "0x", // Empty filter - accept all rows
+            consts: [],
+          },
+        };
+
+        // Open a job with AVG_P operation
+        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, avgJobParams);
+        const jobId = jobIds[i];
+
+        // Push all rows
+        for (let j = 0; j < dataset.rows.length; j++) {
+          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
+        }
+
+        // Finalize the job - should return encrypted average
+        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+        const receipt = await tx.wait();
+        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+        const decryptedResult = await fhevm.userDecryptEuint(
+          FhevmType.euint64,
+          jobFinalizedEvent?.result,
+          jobManagerContractAddress,
+          signers.bob,
+        );
+
+        // Calculate expected average: sum of target column / divisor
+        const targetColumnSum = rowConfigs.reduce((acc, row) => acc + row[targetColumn].value, 0);
+        const expectedAverage = Math.floor(targetColumnSum / divisor); // Use floor division like Solidity
+        expect(decryptedResult).to.equal(BigInt(expectedAverage));
       }
     });
 

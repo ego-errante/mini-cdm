@@ -80,6 +80,11 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
+        // Validate job parameters
+        if (params.op == Op.AVG_P && params.divisor == 0) {
+            revert CannotDivideByZero();
+        }
+
         euint64 initValue = FHE.asEuint64(0);
 
         jobId = _nextJobId++;
@@ -205,6 +210,9 @@ contract JobManager is IJobManager, SepoliaConfig {
             result = FHE.asEuint64(state.kept);
         } else if (params.op == Op.SUM) {
             result = state.agg; // Return the accumulated sum
+        } else if (params.op == Op.AVG_P) {
+            // Apply divisor to get average
+            result = FHE.div(state.agg, params.divisor);
         } else {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
@@ -262,8 +270,8 @@ contract JobManager is IJobManager, SepoliaConfig {
             _state[jobId].kept = FHE.add(_state[jobId].kept, increment);
 
             FHE.allowThis(_state[jobId].kept);
-        } else if (params.op == Op.SUM) {
-            // SUM: add target field value when filter passes
+        } else if (params.op == Op.SUM || params.op == Op.AVG_P) {
+            // SUM and AVG_P: add target field value when filter passes
             euint64 targetValue = fields[params.targetField];
             euint64 increment = FHE.select(keep, targetValue, FHE.asEuint64(0));
 
