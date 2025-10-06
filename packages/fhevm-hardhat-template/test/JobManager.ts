@@ -413,12 +413,12 @@ describe("JobManager", function () {
       dataset.rows = testData.rows;
       dataset.merkleRoot = testData.root;
       dataset.proofs = testData.proofs;
-      dataset.schemaHash = testData.schemaHash;
+      dataset.numColumns = testData.numColumns;
       dataset.rowCount = testData.rows.length;
 
       await datasetRegistryContract
         .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
       // Open jobs for each target column
       const targetColumns = [0, 1];
@@ -497,12 +497,12 @@ describe("JobManager", function () {
       dataset.rows = testData.rows;
       dataset.merkleRoot = testData.root;
       dataset.proofs = testData.proofs;
-      dataset.schemaHash = testData.schemaHash;
+      dataset.numColumns = testData.numColumns;
       dataset.rowCount = testData.rows.length;
 
       await datasetRegistryContract
         .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
       // Open jobs for each target column
       const targetColumns = [0, 1];
@@ -588,12 +588,12 @@ describe("JobManager", function () {
       dataset.rows = testData.rows;
       dataset.merkleRoot = testData.root;
       dataset.proofs = testData.proofs;
-      dataset.schemaHash = testData.schemaHash;
+      dataset.numColumns = testData.numColumns;
       dataset.rowCount = testData.rows.length;
 
       await datasetRegistryContract
         .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
       // Test weighted sum: (field0 * 2) + (field1 * 1) + (field2 * 3)
       const weights = [2, 1, 3]; // weights for fields 0, 1, 2 respectively

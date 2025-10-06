@@ -9,7 +9,7 @@ contract DatasetRegistry is IDatasetRegistry {
 
     struct Dataset {
         bytes32 merkleRoot;
-        bytes32 schemaHash;
+        uint256 numColumns;
         uint256 rowCount;
         address owner;
         bool exists;
@@ -19,9 +19,9 @@ contract DatasetRegistry is IDatasetRegistry {
     function getDataset(uint256 datasetId)
         external
         view
-        returns (bytes32 merkleRoot, bytes32 schemaHash, uint256 rowCount, address owner, bool exists) {
+        returns (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, address owner, bool exists) {
         Dataset memory dataset = _datasets[datasetId];
-        return (dataset.merkleRoot, dataset.schemaHash, dataset.rowCount, dataset.owner, dataset.exists);
+        return (dataset.merkleRoot, dataset.numColumns, dataset.rowCount, dataset.owner, dataset.exists);
     }
 
     function doesDatasetExist(uint256 datasetId) external view returns (bool) {
@@ -37,12 +37,11 @@ contract DatasetRegistry is IDatasetRegistry {
         if (!dataset.exists) {
             return false;
         }
-        bytes32 actualSchemaHash = keccak256(abi.encodePacked(fieldCount));
-        return actualSchemaHash == dataset.schemaHash;
+        return fieldCount == dataset.numColumns;
     }
 
     // ---- lifecycle ----
-    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, bytes32 schemaHash) external {
+    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns) external {
         // Validate inputs
         if (rowCount == 0) {
             revert InvalidRowCount();
@@ -50,8 +49,8 @@ contract DatasetRegistry is IDatasetRegistry {
         if (merkleRoot == bytes32(0)) {
             revert InvalidMerkleRoot();
         }
-        if (schemaHash == bytes32(0)) {
-            revert InvalidSchemaHash();
+        if (numColumns == 0) {
+            revert InvalidNumColumns();
         }
 
         Dataset storage dataset = _datasets[datasetId];
@@ -69,10 +68,10 @@ contract DatasetRegistry is IDatasetRegistry {
 
         // Update the dataset
         dataset.merkleRoot = merkleRoot;
-        dataset.schemaHash = schemaHash;
+        dataset.numColumns = numColumns;
         dataset.rowCount = rowCount;
 
-        emit DatasetCommitted(datasetId, merkleRoot, schemaHash, rowCount, msg.sender);
+        emit DatasetCommitted(datasetId, merkleRoot, numColumns, rowCount, msg.sender);
     }
 
     function deleteDataset(uint256 datasetId) external {

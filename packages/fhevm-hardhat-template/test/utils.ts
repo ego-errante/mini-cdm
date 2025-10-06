@@ -9,7 +9,7 @@ export interface TestDataset {
   rows: string[];
   merkleRoot: string;
   proofs: string[][];
-  schemaHash: string;
+  numColumns: number;
   rowCount: number;
 }
 
@@ -159,14 +159,11 @@ export async function generateTestDatasetWithCustomConfig(
   // Generate merkle tree from encrypted rows
   const merkleData = await generateMerkleTreeFromRows(rows, datasetId);
 
-  // Compute schemaHash using same logic as DatasetRegistry.sol
-  const schemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [numColumns]));
-
   return {
     rows,
     root: merkleData.root,
     proofs: merkleData.proofs,
-    schemaHash,
+    numColumns,
   };
 }
 
@@ -176,7 +173,7 @@ export function createDefaultDatasetParams(id: number = 1): TestDataset {
     rows: [] as string[], // Will be populated with encrypted hex strings
     merkleRoot: "0x" as string,
     proofs: [] as string[][],
-    schemaHash: ethers.keccak256(ethers.toUtf8Bytes("test_schema")),
+    numColumns: 3, // Default number of columns
     rowCount: 4,
   };
 }
@@ -195,12 +192,12 @@ export async function setupTestDataset(
   dataset.rows = testData.rows;
   dataset.merkleRoot = testData.root;
   dataset.proofs = testData.proofs;
-  dataset.schemaHash = testData.schemaHash;
+  dataset.numColumns = testData.numColumns;
   dataset.rowCount = testData.rows.length;
 
   await datasetRegistry
     .connect(owner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.schemaHash);
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
   return dataset;
 }
@@ -248,7 +245,7 @@ export async function deployDatasetRegistryFixture() {
 
 export interface DatasetObject {
   merkleRoot: string;
-  schemaHash: string;
+  numColumns: bigint;
   rowCount: bigint;
   owner: string;
   exists: boolean;
@@ -258,11 +255,11 @@ export async function getDatasetObject(
   datasetRegistryContract: DatasetRegistry,
   datasetId: number,
 ): Promise<DatasetObject> {
-  const [merkleRoot, schemaHash, rowCount, owner, exists] = await datasetRegistryContract.getDataset(datasetId);
+  const [merkleRoot, numColumns, rowCount, owner, exists] = await datasetRegistryContract.getDataset(datasetId);
 
   return {
     merkleRoot,
-    schemaHash,
+    numColumns,
     rowCount,
     owner,
     exists,
