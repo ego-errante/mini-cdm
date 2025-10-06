@@ -218,8 +218,7 @@ export function createDefaultJobParams() {
   return {
     op: OpCodes.SUM,
     targetField: 0,
-    weightFieldIdx: [],
-    weightVals: [],
+    weights: [],
     divisor: 0,
     k: 0,
     cooldownSec: 0,
