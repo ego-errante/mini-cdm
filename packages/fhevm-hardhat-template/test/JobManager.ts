@@ -16,8 +16,10 @@ import {
   createDefaultDatasetParams,
   generateTestDatasetWithCustomConfig,
   RowConfig,
+  createAndRegisterDataset,
+  executeJobAndDecryptResult,
+  parseJobFinalizedEvent,
 } from "./utils";
-import { TransactionReceipt } from "ethers";
 
 describe("JobManager", function () {
   let signers: Signers;
@@ -380,7 +382,6 @@ describe("JobManager", function () {
 
     it("SUM: should sum target columnn values across all rows", async () => {
       const datasetId = 2;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
 
@@ -403,26 +404,16 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
 
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
-
-      // Open jobs for each target column
+      // Test SUM operation for each target column
       const targetColumns = [0, 1];
-      const jobIds = [0, 1];
       for (let i = 0; i < targetColumns.length; i++) {
         const targetColumn = targetColumns[i];
         const sumJobParams = {
@@ -435,25 +426,15 @@ describe("JobManager", function () {
           },
         };
 
-        // Open a job with SUM operation
-        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, sumJobParams);
-        const jobId = jobIds[i];
-
-        // Push all rows
-        for (let i = 0; i < dataset.rows.length; i++) {
-          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
-        }
-
-        // Finalize the job - should return encrypted sum
-        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-        const receipt = await tx.wait();
-        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-        const decryptedResult = await fhevm.userDecryptEuint(
-          FhevmType.euint64,
-          jobFinalizedEvent?.result,
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
           jobManagerContractAddress,
-          signers.bob,
+          dataset,
+          sumJobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
         );
 
         const targetColumnTotalSum = rowConfigs.reduce((acc, row) => acc + row[targetColumn].value, 0);
@@ -463,7 +444,6 @@ describe("JobManager", function () {
 
     it("AVG_P: should compute average of target column values using plaintext divisor", async () => {
       const datasetId = 3;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
       const divisor = 2; // Use divisor of 2 for averaging
@@ -487,26 +467,16 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
 
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
-
-      // Open jobs for each target column
+      // Test AVG_P operation for each target column
       const targetColumns = [0, 1];
-      const jobIds = [0, 1];
       for (let i = 0; i < targetColumns.length; i++) {
         const targetColumn = targetColumns[i];
         const avgJobParams = {
@@ -520,25 +490,15 @@ describe("JobManager", function () {
           },
         };
 
-        // Open a job with AVG_P operation
-        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, avgJobParams);
-        const jobId = jobIds[i];
-
-        // Push all rows
-        for (let j = 0; j < dataset.rows.length; j++) {
-          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
-        }
-
-        // Finalize the job - should return encrypted average
-        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-        const receipt = await tx.wait();
-        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-        const decryptedResult = await fhevm.userDecryptEuint(
-          FhevmType.euint64,
-          jobFinalizedEvent?.result,
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
           jobManagerContractAddress,
-          signers.bob,
+          dataset,
+          avgJobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
         );
 
         // Calculate expected average: sum of target column / divisor
@@ -550,7 +510,6 @@ describe("JobManager", function () {
 
     it("WEIGHTED_SUM: should compute weighted sum of specified fields", async () => {
       const datasetId = 4;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
 
@@ -578,22 +537,13 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
-
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
       // Test weighted sum: (field0 * 2) + (field1 * 1) + (field2 * 3)
       const weights = [2, 1, 3]; // weights for fields 0, 1, 2 respectively
@@ -608,25 +558,15 @@ describe("JobManager", function () {
         },
       };
 
-      // Open a job with WEIGHTED_SUM operation
-      await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, weightedSumJobParams);
-      const jobId = 0;
-
-      // Push all rows
-      for (let i = 0; i < dataset.rows.length; i++) {
-        await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
-      }
-
-      // Finalize the job - should return encrypted weighted sum
-      const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-      const receipt = await tx.wait();
-      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-      const decryptedResult = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        jobFinalizedEvent?.result,
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
         jobManagerContractAddress,
-        signers.bob,
+        dataset,
+        weightedSumJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
       );
 
       // Expected calculation:
@@ -641,7 +581,6 @@ describe("JobManager", function () {
 
     it("MIN: should find minimum value in target column", async () => {
       const datasetId = 5;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
 
@@ -665,27 +604,17 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
 
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
-
       // Test MIN operation on both columns
       const targetColumns = [0, 1];
       const expectedMins = [25, 5]; // field 0 min = 25, field 1 min = 5
-      const jobIds = [0, 1];
 
       for (let i = 0; i < targetColumns.length; i++) {
         const targetColumn = targetColumns[i];
@@ -699,25 +628,15 @@ describe("JobManager", function () {
           },
         };
 
-        // Open a job with MIN operation
-        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, minJobParams);
-        const jobId = jobIds[i];
-
-        // Push all rows
-        for (let j = 0; j < dataset.rows.length; j++) {
-          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
-        }
-
-        // Finalize the job - should return encrypted minimum
-        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-        const receipt = await tx.wait();
-        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-        const decryptedResult = await fhevm.userDecryptEuint(
-          FhevmType.euint64,
-          jobFinalizedEvent?.result,
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
           jobManagerContractAddress,
-          signers.bob,
+          dataset,
+          minJobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
         );
 
         // Verify the minimum value is returned
@@ -727,7 +646,6 @@ describe("JobManager", function () {
 
     it("MAX: should find maximum value in target column", async () => {
       const datasetId = 6;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
 
@@ -751,27 +669,17 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
 
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
-
       // Test MAX operation on both columns
       const targetColumns = [0, 1];
       const expectedMaxes = [75, 85]; // field 0 max = 75, field 1 max = 85
-      const jobIds = [0, 1];
 
       for (let i = 0; i < targetColumns.length; i++) {
         const targetColumn = targetColumns[i];
@@ -785,25 +693,15 @@ describe("JobManager", function () {
           },
         };
 
-        // Open a job with MAX operation
-        await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, maxJobParams);
-        const jobId = jobIds[i];
-
-        // Push all rows
-        for (let j = 0; j < dataset.rows.length; j++) {
-          await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[j], dataset.proofs[j], j);
-        }
-
-        // Finalize the job - should return encrypted maximum
-        const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-        const receipt = await tx.wait();
-        const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-        const decryptedResult = await fhevm.userDecryptEuint(
-          FhevmType.euint64,
-          jobFinalizedEvent?.result,
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
           jobManagerContractAddress,
-          signers.bob,
+          dataset,
+          maxJobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
         );
 
         // Verify the maximum value is returned
@@ -817,7 +715,6 @@ describe("JobManager", function () {
   describe("filter", () => {
     it("should evaluate filter bytecode and affect COUNT result", async () => {
       const datasetId = 7;
-      const dataset = createDefaultDatasetParams(datasetId);
       const datasetOwner = signers.alice;
       const jobBuyer = signers.bob;
 
@@ -842,22 +739,13 @@ describe("JobManager", function () {
         ],
       ] as RowConfig[][];
 
-      const testData = await generateTestDatasetWithCustomConfig(
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
         jobManagerContractAddress,
         datasetOwner,
         rowConfigs,
         datasetId,
       );
-
-      dataset.rows = testData.rows;
-      dataset.merkleRoot = testData.root;
-      dataset.proofs = testData.proofs;
-      dataset.numColumns = testData.numColumns;
-      dataset.rowCount = testData.rows.length;
-
-      await datasetRegistryContract
-        .connect(datasetOwner)
-        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
 
       // Create COUNT job with filter: field[0] > 20
       // Bytecode: PUSH_FIELD(0), PUSH_CONST(20), GT
@@ -877,26 +765,15 @@ describe("JobManager", function () {
         },
       };
 
-      // Open job
-      await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, countJobWithFilterParams);
-      const jobId = 0;
-
-      // Push all rows
-      for (let i = 0; i < dataset.rows.length; i++) {
-        await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
-      }
-
-      // Finalize the job
-      const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
-      const receipt = await tx.wait();
-      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
-
-      // Decrypt the result
-      const decryptedResult = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
-        jobFinalizedEvent?.result,
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
         jobManagerContractAddress,
-        signers.bob,
+        dataset,
+        countJobWithFilterParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
       );
 
       // Should count only rows where field[0] > 20: values 25 and 35 (2 rows)
@@ -962,12 +839,3 @@ async function executeCountJob(
 //   const tx = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
 //   return await tx.wait();
 // }
-
-function parseJobFinalizedEvent(jobManagerContract: JobManager, receipt: TransactionReceipt | null) {
-  if (!receipt) {
-    return undefined;
-  }
-
-  return receipt.logs.map((log) => jobManagerContract.interface.parseLog(log)).find((e) => e?.name === "JobFinalized")!
-    .args;
-}

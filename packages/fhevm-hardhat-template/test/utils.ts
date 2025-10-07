@@ -3,6 +3,7 @@ import { JobManager, JobManager__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers } from "hardhat";
 import { createPackedEncryptedTable } from "./RowDecoder";
+import { TransactionReceipt } from "ethers";
 
 export interface TestDataset {
   id: number;
@@ -272,4 +273,86 @@ export async function deployJobManagerFixture(datasetRegistryContractAddress: st
   const jobManagerContractAddress = await jobManagerContract.getAddress();
 
   return { jobManagerContract, jobManagerContractAddress };
+}
+
+// Dataset creation and registration utilities
+export async function createAndRegisterDataset(
+  datasetRegistryContract: DatasetRegistry,
+  jobManagerAddress: string,
+  datasetOwner: HardhatEthersSigner,
+  rowConfigs: RowConfig[][],
+  datasetId: number,
+): Promise<TestDataset> {
+  const dataset = createDefaultDatasetParams(datasetId);
+
+  const testData = await generateTestDatasetWithCustomConfig(jobManagerAddress, datasetOwner, rowConfigs, datasetId);
+  dataset.rows = testData.rows;
+  dataset.merkleRoot = testData.root;
+  dataset.proofs = testData.proofs;
+  dataset.numColumns = testData.numColumns;
+  dataset.rowCount = testData.rows.length;
+
+  await datasetRegistryContract
+    .connect(datasetOwner)
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+
+  return dataset;
+}
+
+// Job execution utilities
+export async function executeJob(
+  jobManagerContract: JobManager,
+  dataset: TestDataset,
+  jobParams: any,
+  datasetOwner: HardhatEthersSigner,
+  jobBuyer: HardhatEthersSigner,
+): Promise<{ jobId: number; receipt: any }> {
+  // Open job
+  await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer.address, jobParams);
+  const jobId = (await jobManagerContract.nextJobId()) - 1n; // Get the job ID (nextJobId was incremented)
+
+  // Push all rows
+  for (let i = 0; i < dataset.rows.length; i++) {
+    await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
+  }
+
+  // Finalize job
+  const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+  const receipt = await tx.wait();
+
+  return { jobId: Number(jobId), receipt };
+}
+
+export async function executeJobAndDecryptResult(
+  jobManagerContract: JobManager,
+  jobManagerContractAddress: string,
+  dataset: TestDataset,
+  jobParams: any,
+  datasetOwner: HardhatEthersSigner,
+  jobBuyer: HardhatEthersSigner,
+  fhevm: any,
+  FhevmType: any,
+): Promise<{ jobId: number; receipt: any; decryptedResult: bigint }> {
+  const { jobId, receipt } = await executeJob(jobManagerContract, dataset, jobParams, datasetOwner, jobBuyer);
+
+  // Parse event and decrypt result
+  const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+  const decryptedResult = await fhevm.userDecryptEuint(
+    FhevmType.euint64,
+    jobFinalizedEvent?.result,
+    jobManagerContractAddress,
+    jobBuyer,
+  );
+
+  return { jobId, receipt, decryptedResult };
+}
+
+// Event parsing utilities
+export function parseJobFinalizedEvent(jobManagerContract: JobManager, receipt: TransactionReceipt | null) {
+  if (!receipt) {
+    return undefined;
+  }
+
+  return receipt.logs.map((log) => jobManagerContract.interface.parseLog(log)).find((e) => e?.name === "JobFinalized")!
+    .args;
 }
