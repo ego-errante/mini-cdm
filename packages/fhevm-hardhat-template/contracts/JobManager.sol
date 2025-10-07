@@ -13,6 +13,24 @@ import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
 import {RowDecoder} from "./RowDecoder.sol";
 contract JobManager is IJobManager, SepoliaConfig {
+    // ---- Filter VM opcodes ----
+    // Value operations
+    uint8 constant PUSH_FIELD = 0x01;
+    uint8 constant PUSH_CONST = 0x02;
+
+    // Comparators (GT, GE, LT, LE, EQ, NE)
+    uint8 constant GT = 0x10;
+    uint8 constant GE = 0x11;
+    uint8 constant LT = 0x12;
+    uint8 constant LE = 0x13;
+    uint8 constant EQ = 0x14;
+    uint8 constant NE = 0x15;
+
+    // Logical operations
+    uint8 constant AND = 0x20;
+    uint8 constant OR = 0x21;
+    uint8 constant NOT = 0x22;
+
     // ---- dependencies ----
     IDatasetRegistry public immutable DATASET_REGISTRY;
 
@@ -247,23 +265,141 @@ contract JobManager is IJobManager, SepoliaConfig {
         emit JobFinalized(jobId, buyer, result);
     }
 
-    // ---- Step 3: Filter VM skeleton ----
-    // Phase A: Accept-all when no bytecode
-    // Phase B: PUSH_CONST, ALWAYS_TRUE/FALSE
-    // Phase C: PUSH_FIELD idx, PUSH_CONST c, GT, LE
+    // ---- Step 3: Filter VM implementation ----
+    // Phase 1: VM structure with opcodes
+    // Phase 2: PUSH_FIELD, PUSH_CONST
+    // Phase 3: Comparators (GT, GE, LT, LE, EQ, NE)
+    // Phase 4: Logical operations (AND, OR, NOT)
 
     /// @notice Evaluates filter bytecode against encrypted row fields
     /// @param filter The filter program with bytecode and constants
+    /// @param fields The decrypted row fields as euint64 values
     /// @return keep Whether the row should be kept (encrypted boolean)
-    function _evalFilter(FilterProg memory filter, euint64[] memory /* fields */) internal returns (ebool) {
+    function _evalFilter(FilterProg memory filter, euint64[] memory fields) internal returns (ebool) {
         // Phase A: Empty filter = accept all
         if (filter.bytecode.length == 0) {
             return FHE.asEbool(true);
         }
 
-        // TODO: Implement Phase B (PUSH_CONST, ALWAYS_TRUE/FALSE) and Phase C (PUSH_FIELD, GT, LE)
-        // For now, return accept-all as placeholder
-        return FHE.asEbool(true);
+        // Initialize VM stacks (fixed size for simplicity)
+        // euint64 value stack (for encrypted values)
+        euint64[8] memory valueStack;
+        uint8 valueSp = 0;
+
+        // uint64 plaintext constants stack (for plaintext values)
+        uint64[8] memory constStack;
+        uint8 constSp = 0;
+
+        // ebool boolean stack (for encrypted boolean results)
+        ebool[8] memory boolStack;
+        uint8 boolSp = 0;
+
+        // Main VM execution loop
+        uint256 pc = 0; // program counter
+        while (pc < filter.bytecode.length) {
+            uint8 opcode = uint8(filter.bytecode[pc]);
+            pc++;
+
+            if (opcode == PUSH_FIELD) {
+                // PUSH_FIELD: read 16-bit field index, push encrypted field value
+                require(pc + 2 <= filter.bytecode.length, "PUSH_FIELD: insufficient bytecode");
+                uint16 fieldIdx = (uint16(uint8(filter.bytecode[pc])) << 8) | uint16(uint8(filter.bytecode[pc + 1]));
+                pc += 2;
+
+                require(fieldIdx < fields.length, "PUSH_FIELD: invalid field index");
+                require(valueSp < valueStack.length, "PUSH_FIELD: value stack overflow");
+
+                valueStack[valueSp] = fields[fieldIdx];
+                valueSp++;
+
+            } else if (opcode == PUSH_CONST) {
+                // PUSH_CONST: read 16-bit const index, push plaintext constant
+                require(pc + 2 <= filter.bytecode.length, "PUSH_CONST: insufficient bytecode");
+                uint16 constIdx = (uint16(uint8(filter.bytecode[pc])) << 8) | uint16(uint8(filter.bytecode[pc + 1]));
+                pc += 2;
+
+                require(constIdx < filter.consts.length, "PUSH_CONST: invalid const index");
+                require(constSp < constStack.length, "PUSH_CONST: const stack overflow");
+
+                constStack[constSp] = uint64(filter.consts[constIdx]);
+                constSp++;
+
+            } else if (opcode >= GT && opcode <= NE) {
+                // Comparators: pop encrypted value and plaintext const, compare, push result
+                require(valueSp > 0, "Comparator: value stack underflow");
+                require(constSp > 0, "Comparator: const stack underflow");
+                require(boolSp < boolStack.length, "Comparator: bool stack overflow");
+
+                valueSp--;
+                constSp--;
+
+                euint64 encryptedVal = valueStack[valueSp];
+                uint64 plainVal = constStack[constSp];
+
+                ebool result;
+                if (opcode == GT) {
+                    result = FHE.gt(encryptedVal, plainVal);
+                } else if (opcode == GE) {
+                    result = FHE.ge(encryptedVal, plainVal);
+                } else if (opcode == LT) {
+                    result = FHE.lt(encryptedVal, plainVal);
+                } else if (opcode == LE) {
+                    result = FHE.le(encryptedVal, plainVal);
+                } else if (opcode == EQ) {
+                    result = FHE.eq(encryptedVal, plainVal);
+                } else if (opcode == NE) {
+                    result = FHE.ne(encryptedVal, plainVal);
+                }
+
+                boolStack[boolSp] = result;
+                boolSp++;
+
+            } else if (opcode == NOT) {
+                // NOT: pop one boolean, perform logical NOT, push result
+                require(boolSp > 0, "NOT: bool stack underflow");
+
+                boolSp--;
+                ebool operand = boolStack[boolSp];
+
+                ebool result = FHE.not(operand);
+
+                require(boolSp < boolStack.length, "NOT: bool stack overflow");
+                boolStack[boolSp] = result;
+                boolSp++;
+
+            } else if (opcode == AND || opcode == OR) {
+                // AND/OR: pop two booleans, perform logical operation, push result
+                require(boolSp >= 2, "AND/OR: bool stack underflow");
+
+                boolSp -= 2;
+                ebool right = boolStack[boolSp];
+                ebool left = boolStack[boolSp + 1];
+
+                ebool result;
+                if (opcode == AND) {
+                    result = FHE.and(left, right);
+                } else { // OR
+                    result = FHE.or(left, right);
+                }
+
+                require(boolSp < boolStack.length, "AND/OR: bool stack overflow");
+                boolStack[boolSp] = result;
+                boolSp++;
+
+            } else {
+                revert("Unknown opcode");
+            }
+        }
+
+        // Final result: boolean stack should contain exactly one value
+        require(boolSp == 1, "Filter VM: invalid final stack state - must have exactly one boolean result");
+
+        // All stacks should be empty except for the final boolean result
+        require(valueSp == 0, "Filter VM: value stack not empty after execution");
+        require(constSp == 0, "Filter VM: const stack not empty after execution");
+
+        // Return the final boolean result
+        return boolStack[0];
     }
 
     // ---- Step 4: COUNT operation ----

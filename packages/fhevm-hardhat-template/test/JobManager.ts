@@ -813,6 +813,96 @@ describe("JobManager", function () {
 
     // it("should track last use timestamp for cooldown", async () => {
   });
+
+  describe("filter", () => {
+    it("should evaluate filter bytecode and affect COUNT result", async () => {
+      const datasetId = 7;
+      const dataset = createDefaultDatasetParams(datasetId);
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with known values: [5, 15, 25, 35] in first column
+      // We'll filter for values > 20, which should keep only 25 and 35 (2 rows)
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 5 },
+          { type: "euint8", value: 100 },
+        ],
+        [
+          { type: "euint8", value: 15 },
+          { type: "euint8", value: 200 },
+        ],
+        [
+          { type: "euint8", value: 25 },
+          { type: "euint8", value: 250 },
+        ],
+        [
+          { type: "euint8", value: 35 },
+          { type: "euint8", value: 50 },
+        ],
+      ] as RowConfig[][];
+
+      const testData = await generateTestDatasetWithCustomConfig(
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      dataset.rows = testData.rows;
+      dataset.merkleRoot = testData.root;
+      dataset.proofs = testData.proofs;
+      dataset.numColumns = testData.numColumns;
+      dataset.rowCount = testData.rows.length;
+
+      await datasetRegistryContract
+        .connect(datasetOwner)
+        .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+
+      // Create COUNT job with filter: field[0] > 20
+      // Bytecode: PUSH_FIELD(0), PUSH_CONST(20), GT
+      // prettier-ignore
+      const filterBytecode = new Uint8Array([
+        0x01, 0x00, 0x00, // PUSH_FIELD index 0 (3 bytes: opcode + 2-byte index)
+        0x02, 0x00, 0x00, // PUSH_CONST index 0 (3 bytes: opcode + 2-byte index into consts array)
+        0x10, // GT (1 byte)
+      ]);
+
+      const countJobWithFilterParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.COUNT,
+        filter: {
+          bytecode: ethers.hexlify(filterBytecode),
+          consts: [20], // Constants array: [20]
+        },
+      };
+
+      // Open job
+      await jobManagerContract.connect(datasetOwner).openJob(dataset.id, jobBuyer, countJobWithFilterParams);
+      const jobId = 0;
+
+      // Push all rows
+      for (let i = 0; i < dataset.rows.length; i++) {
+        await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
+      }
+
+      // Finalize the job
+      const tx = await jobManagerContract.connect(datasetOwner).finalize(jobId);
+      const receipt = await tx.wait();
+      const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
+
+      // Decrypt the result
+      const decryptedResult = await fhevm.userDecryptEuint(
+        FhevmType.euint64,
+        jobFinalizedEvent?.result,
+        jobManagerContractAddress,
+        signers.bob,
+      );
+
+      // Should count only rows where field[0] > 20: values 25 and 35 (2 rows)
+      expect(decryptedResult).to.equal(BigInt(2));
+    });
+  });
 });
 
 async function executeCountJob(
