@@ -19,6 +19,16 @@ import {
   createAndRegisterDataset,
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
+  compileFilterDSL,
+  gt,
+  ge,
+  lt,
+  le,
+  eq,
+  ne,
+  and,
+  or,
+  not,
 } from "./utils";
 
 describe("JobManager", function () {
@@ -747,6 +757,7 @@ describe("JobManager", function () {
         datasetId,
       );
 
+      // Note: Keeping this here for reference
       // Create COUNT job with filter: field[0] > 20
       // Bytecode: PUSH_FIELD(0), PUSH_CONST(20), GT
       // prettier-ignore
@@ -778,6 +789,71 @@ describe("JobManager", function () {
 
       // Should count only rows where field[0] > 20: values 25 and 35 (2 rows)
       expect(decryptedResult).to.equal(BigInt(2));
+    });
+
+    it("should correctly evaluate a complex filter with all opcodes", async () => {
+      const datasetId = 8;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      const rowConfigs: RowConfig[][] = [
+        // field[0], field[1]
+        [
+          { type: "euint32", value: 25 },
+          { type: "euint32", value: 200 },
+        ], // and: true, or: true -> KEEPS
+        [
+          { type: "euint32", value: 10 },
+          { type: "euint32", value: 200 },
+        ], // and: false, or: true -> KEEPS
+        [
+          { type: "euint32", value: 50 },
+          { type: "euint32", value: 500 },
+        ], // and: false, or: false -> REJECTS
+        [
+          { type: "euint32", value: 150 },
+          { type: "euint32", value: 100 },
+        ], // and: false, or: true -> KEEPS
+      ];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      // Filter: ((11 <= field[0] <= 99 AND field[1] == 200) OR (field[1] != 500))
+      // This is a left-associative chain of ANDs to keep stack usage low
+      const andChain = and(and(and(and(and(gt(0, 10), ge(0, 11)), lt(0, 100)), le(0, 99)), eq(1, 200)), ne(1, 300));
+
+      const notPart = not(eq(1, 500));
+      const fullFilter = or(andChain, notPart);
+
+      const compiledFilter = compileFilterDSL(fullFilter);
+
+      const countJobWithFilterParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.COUNT,
+        filter: {
+          bytecode: compiledFilter.bytecode,
+          consts: compiledFilter.consts,
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        countJobWithFilterParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      expect(decryptedResult).to.equal(BigInt(3));
     });
   });
 });

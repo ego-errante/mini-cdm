@@ -347,6 +347,144 @@ export async function executeJobAndDecryptResult(
   return { jobId, receipt, decryptedResult };
 }
 
+// Filter DSL compilation utilities
+
+// DSL Filter Expression types
+export type FilterDSL =
+  | ["GT" | "GE" | "LT" | "LE" | "EQ" | "NE", number, number] // [op, fieldIndex, value]
+  | ["AND" | "OR", FilterDSL, FilterDSL] // [op, left, right]
+  | ["NOT", FilterDSL]; // [op, expr]
+
+export interface CompiledFilter {
+  bytecode: string; // hex string
+  consts: number[]; // plaintext constants
+}
+
+/**
+ * Compiles a JSON DSL filter expression to bytecode and constants
+ * @param dsl The filter DSL expression
+ * @returns Compiled bytecode and constants for FilterProg
+ */
+export function compileFilterDSL(dsl: FilterDSL): CompiledFilter {
+  const MAX_STACK_DEPTH = 8;
+
+  /**
+   * Calculates the maximum stack depth required to evaluate a DSL expression.
+   * This is based on a post-order traversal of the expression tree, simulating
+   * how the Filter VM would execute the bytecode.
+   * For an expression (A op B), the VM first evaluates A, leaving one result.
+   * Then it evaluates B, with A's result still on the stack.
+   * The max depth is therefore max(depth(A), 1 + depth(B)).
+   */
+  function getExpressionMaxDepth(expr: FilterDSL): number {
+    const op = expr[0];
+    if (op === "NOT") {
+      // NOT reuses the same stack slot, so depth doesn't change.
+      return getExpressionMaxDepth(expr[1] as FilterDSL);
+    } else if (op === "AND" || op === "OR") {
+      // Binary expression: A op B
+      const leftDepth = getExpressionMaxDepth(expr[1] as FilterDSL);
+      const rightDepth = getExpressionMaxDepth(expr[2] as FilterDSL);
+      return Math.max(leftDepth, 1 + rightDepth);
+    } else {
+      // Comparison expression, pushes one result.
+      return 1;
+    }
+  }
+
+  // Validate stack depth before compiling
+  const requiredStackDepth = getExpressionMaxDepth(dsl);
+  if (requiredStackDepth > MAX_STACK_DEPTH) {
+    throw new Error(`Filter DSL exceeds max stack depth. Required: ${requiredStackDepth}, Max: ${MAX_STACK_DEPTH}`);
+  }
+
+  const bytecode: number[] = [];
+  const consts: number[] = [];
+
+  function compile(expr: FilterDSL): void {
+    if (expr[0] === "NOT") {
+      // NOT expression
+      compile(expr[1] as FilterDSL);
+      bytecode.push(0x22); // NOT
+    } else if (expr[0] === "AND" || expr[0] === "OR") {
+      // Binary logical expression
+      compile(expr[1] as FilterDSL);
+      compile(expr[2] as FilterDSL);
+      bytecode.push(expr[0] === "AND" ? 0x20 : 0x21); // AND or OR
+    } else {
+      // Comparison expression: [op, fieldIndex, value]
+      const [op, fieldIndex, value] = expr as [string, number, number];
+
+      // PUSH_FIELD
+      bytecode.push(0x01); // PUSH_FIELD opcode
+      bytecode.push((fieldIndex >> 8) & 0xff, fieldIndex & 0xff); // uint16 field index (big endian)
+
+      // PUSH_CONST
+      bytecode.push(0x02); // PUSH_CONST opcode
+      const constIndex = consts.length;
+      consts.push(value);
+      bytecode.push((constIndex >> 8) & 0xff, constIndex & 0xff); // uint16 const index (big endian)
+
+      // Comparator
+      const opcodes: { [key: string]: number } = {
+        GT: 0x10,
+        GE: 0x11,
+        LT: 0x12,
+        LE: 0x13,
+        EQ: 0x14,
+        NE: 0x15,
+      };
+      bytecode.push(opcodes[op]);
+    }
+  }
+
+  compile(dsl);
+
+  // Convert bytecode to hex string
+  const bytecodeHex = "0x" + bytecode.map((b) => b.toString(16).padStart(2, "0")).join("");
+
+  return { bytecode: bytecodeHex, consts };
+}
+
+/**
+ * Helper to create simple comparison filters
+ */
+export function gt(fieldIndex: number, value: number): FilterDSL {
+  return ["GT", fieldIndex, value];
+}
+
+export function ge(fieldIndex: number, value: number): FilterDSL {
+  return ["GE", fieldIndex, value];
+}
+
+export function lt(fieldIndex: number, value: number): FilterDSL {
+  return ["LT", fieldIndex, value];
+}
+
+export function le(fieldIndex: number, value: number): FilterDSL {
+  return ["LE", fieldIndex, value];
+}
+
+export function eq(fieldIndex: number, value: number): FilterDSL {
+  return ["EQ", fieldIndex, value];
+}
+
+export function ne(fieldIndex: number, value: number): FilterDSL {
+  return ["NE", fieldIndex, value];
+}
+
+export function and(left: FilterDSL, right: FilterDSL): FilterDSL {
+  return ["AND", left, right];
+}
+
+export function or(left: FilterDSL, right: FilterDSL): FilterDSL {
+  return ["OR", left, right];
+}
+
+export function not(expr: FilterDSL): FilterDSL {
+  return ["NOT", expr];
+}
+
 // Event parsing utilities
 export function parseJobFinalizedEvent(jobManagerContract: JobManager, receipt: TransactionReceipt | null) {
   if (!receipt) {
