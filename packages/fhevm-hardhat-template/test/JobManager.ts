@@ -13,12 +13,12 @@ import {
   generateTestDatasetWithEncryption,
   TestDataset,
   OpCodes,
-  createDefaultDatasetParams,
-  generateTestDatasetWithCustomConfig,
   RowConfig,
   createAndRegisterDataset,
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
+} from "./utils";
+import {
   compileFilterDSL,
   gt,
   ge,
@@ -30,7 +30,9 @@ import {
   or,
   not,
   FilterDSL,
-} from "./utils";
+  OpcodeName,
+  buildBytecode,
+} from "./filter-dsl";
 
 describe("JobManager", function () {
   let signers: Signers;
@@ -859,45 +861,6 @@ describe("JobManager", function () {
   });
 
   describe("Filter VM Error Handling", () => {
-    // Opcode constants for readable bytecode construction
-    const opcodes = {
-      PUSH_FIELD: 0x01,
-      PUSH_CONST: 0x02,
-      GT: 0x10,
-      GE: 0x11,
-      LT: 0x12,
-      LE: 0x13,
-      EQ: 0x14,
-      NE: 0x15,
-      AND: 0x20,
-      OR: 0x21,
-      NOT: 0x22,
-    } as const;
-
-    // Type-safe union of valid opcode names
-    type OpcodeName = keyof typeof opcodes;
-
-    /**
-     * Converts instruction arrays to bytecode hex string
-     * Instructions format: ['PUSH_FIELD', fieldIndex] | ['PUSH_CONST', constIndex] | ['GT'] | ['AND'] | etc.
-     */
-    function buildBytecode(instructions: (readonly [OpcodeName, ...number[]])[]): string {
-      const bytecode: number[] = [];
-
-      for (const instruction of instructions) {
-        const [opcodeName, ...params] = instruction;
-        const opcode = opcodes[opcodeName];
-        bytecode.push(opcode);
-
-        // Add parameter bytes (big endian for 16-bit values)
-        for (const param of params) {
-          bytecode.push((param >> 8) & 0xff, param & 0xff);
-        }
-      }
-
-      return "0x" + bytecode.map((b) => b.toString(16).padStart(2, "0")).join("");
-    }
-
     it("should throw a client-side error for filters exceeding max stack depth", () => {
       // Create a right-associative filter that requires a stack depth of 9
       let deepFilter: FilterDSL = gt(0, 0);
