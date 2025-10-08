@@ -6,7 +6,7 @@ interface IDatasetRegistry {
     function getDataset(uint256 datasetId)
         external
         view
-        returns (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, address owner, bool exists);
+        returns (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, address owner, bool exists, uint32 kAnonymity);
 
     function doesDatasetExist(uint256 datasetId) external view returns (bool);
 
@@ -15,7 +15,7 @@ interface IDatasetRegistry {
     function isRowSchemaValid(uint256 datasetId, uint256 fieldCount) external view returns (bool);
 
     // ---- lifecycle ----
-    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns) external;
+    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns, uint32 kAnonymity) external;
 
     function deleteDataset(uint256 datasetId) external;
 
@@ -25,7 +25,8 @@ interface IDatasetRegistry {
         bytes32 merkleRoot,
         uint256 numColumns,
         uint256 rowCount,
-        address indexed owner
+        address indexed owner,
+        uint32 kAnonymity
     );
 
     event DatasetDeleted(uint256 indexed datasetId, address indexed owner);

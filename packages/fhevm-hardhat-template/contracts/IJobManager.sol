@@ -27,7 +27,6 @@ interface IJobManager {
         uint16 targetField; // for SUM/AVG_P/MIN/MAX; ignored for WEIGHTED_SUM
         uint16[] weights; // weights for WEIGHTED_SUM (weights[i] applies to field i)
         uint32 divisor; // plaintext divisor (0 if unused)
-        uint32 k; // k-anonymity threshold
         uint32 cooldownSec; // per (buyer,dataset) cooldown
         uint64 clampMin; // 0 if unused
         uint64 clampMax; // 0 if unused

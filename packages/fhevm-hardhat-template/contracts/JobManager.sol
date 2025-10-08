@@ -105,7 +105,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         if (params.op == Op.WEIGHTED_SUM) {
             // Get expected field count from dataset registry
-            (, uint256 numColumns, , , ) = DATASET_REGISTRY.getDataset(datasetId);
+            (, uint256 numColumns, , , , ) = DATASET_REGISTRY.getDataset(datasetId);
             if (params.weights.length != numColumns) {
                 revert WeightsLengthMismatch();
             }
@@ -184,7 +184,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         }
 
         // 3. Get dataset info from registry
-        (bytes32 merkleRoot, , , ,) = DATASET_REGISTRY.getDataset(datasetId);
+        (bytes32 merkleRoot, , , , ,) = DATASET_REGISTRY.getDataset(datasetId);
 
         // 4. Compute expected leaf hash: keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked))
         bytes32 expectedLeaf = keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked));
@@ -222,7 +222,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // Validate that all rows have been processed
         uint256 datasetId = _jobs[jobId].datasetId;
-        (, , uint256 rowCount, , ) = DATASET_REGISTRY.getDataset(datasetId);
+        (, , uint256 rowCount, , , ) = DATASET_REGISTRY.getDataset(datasetId);
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();

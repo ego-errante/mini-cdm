@@ -82,7 +82,7 @@ describe("Merkle Integration", function () {
       const wrongRoot = ethers.keccak256(ethers.toUtf8Bytes("wrong_root"));
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(wrongDatasetId, wrongRowCount, wrongRoot, testDataset.numColumns);
+        .commitDataset(wrongDatasetId, wrongRowCount, wrongRoot, testDataset.numColumns, 0);
 
       // Open job on different dataset
       await jobManagerContract.connect(signers.alice).openJob(wrongDatasetId, signers.bob.address, jobParams);

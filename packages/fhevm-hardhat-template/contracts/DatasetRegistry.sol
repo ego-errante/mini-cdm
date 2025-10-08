@@ -13,15 +13,16 @@ contract DatasetRegistry is IDatasetRegistry {
         uint256 rowCount;
         address owner;
         bool exists;
+        uint32 kAnonymity;
     }
 
     // ---- views ----
     function getDataset(uint256 datasetId)
         external
         view
-        returns (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, address owner, bool exists) {
+        returns (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, address owner, bool exists, uint32 kAnonymity) {
         Dataset memory dataset = _datasets[datasetId];
-        return (dataset.merkleRoot, dataset.numColumns, dataset.rowCount, dataset.owner, dataset.exists);
+        return (dataset.merkleRoot, dataset.numColumns, dataset.rowCount, dataset.owner, dataset.exists, dataset.kAnonymity);
     }
 
     function doesDatasetExist(uint256 datasetId) external view returns (bool) {
@@ -41,7 +42,7 @@ contract DatasetRegistry is IDatasetRegistry {
     }
 
     // ---- lifecycle ----
-    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns) external {
+    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns, uint32 kAnonymity) external {
         // Validate inputs
         if (rowCount == 0) {
             revert InvalidRowCount();
@@ -70,8 +71,9 @@ contract DatasetRegistry is IDatasetRegistry {
         dataset.merkleRoot = merkleRoot;
         dataset.numColumns = numColumns;
         dataset.rowCount = rowCount;
+        dataset.kAnonymity = kAnonymity;
 
-        emit DatasetCommitted(datasetId, merkleRoot, numColumns, rowCount, msg.sender);
+        emit DatasetCommitted(datasetId, merkleRoot, numColumns, rowCount, msg.sender, kAnonymity);
     }
 
     function deleteDataset(uint256 datasetId) external {

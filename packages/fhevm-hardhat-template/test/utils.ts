@@ -198,7 +198,7 @@ export async function setupTestDataset(
 
   await datasetRegistry
     .connect(owner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, 0);
 
   return dataset;
 }
@@ -218,7 +218,6 @@ export function createDefaultJobParams() {
     targetField: 0,
     weights: [],
     divisor: 0,
-    k: 0,
     cooldownSec: 0,
     clampMin: 0,
     clampMax: 0,
@@ -294,7 +293,7 @@ export async function createAndRegisterDataset(
 
   await datasetRegistryContract
     .connect(datasetOwner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns);
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, 0);
 
   return dataset;
 }
