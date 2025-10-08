@@ -179,6 +179,30 @@ export function createDefaultDatasetParams(id: number = 1): TestDataset {
   };
 }
 
+async function commitDataset(
+  datasetRegistry: DatasetRegistry,
+  owner: HardhatEthersSigner,
+  datasetId: number,
+  testData: { rows: string[]; root: string; proofs: string[][]; numColumns: number },
+): Promise<TestDataset> {
+  const dataset = createDefaultDatasetParams(datasetId);
+
+  // Populate dataset with generated test data
+  dataset.rows = testData.rows;
+  dataset.merkleRoot = testData.root;
+  dataset.proofs = testData.proofs;
+  dataset.numColumns = testData.numColumns;
+  dataset.rowCount = testData.rows.length;
+
+  const kAnonymity = KAnonymityLevels.NONE;
+
+  await datasetRegistry
+    .connect(owner)
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, kAnonymity);
+
+  return dataset;
+}
+
 export async function setupTestDataset(
   datasetRegistry: DatasetRegistry,
   jobManagerAddress: string,
@@ -187,20 +211,20 @@ export async function setupTestDataset(
   numRows: number = 4,
   numColumns: number = 1,
 ): Promise<TestDataset> {
-  const dataset = createDefaultDatasetParams(datasetId);
-
   const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId, numRows, numColumns);
-  dataset.rows = testData.rows;
-  dataset.merkleRoot = testData.root;
-  dataset.proofs = testData.proofs;
-  dataset.numColumns = testData.numColumns;
-  dataset.rowCount = testData.rows.length;
+  return commitDataset(datasetRegistry, owner, datasetId, testData);
+}
 
-  await datasetRegistry
-    .connect(owner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, 0);
-
-  return dataset;
+// Dataset creation and registration utilities
+export async function createAndRegisterDataset(
+  datasetRegistryContract: DatasetRegistry,
+  jobManagerAddress: string,
+  datasetOwner: HardhatEthersSigner,
+  rowConfigs: RowConfig[][],
+  datasetId: number,
+): Promise<TestDataset> {
+  const testData = await generateTestDatasetWithCustomConfig(jobManagerAddress, datasetOwner, rowConfigs, datasetId);
+  return commitDataset(datasetRegistryContract, datasetOwner, datasetId, testData);
 }
 
 export const OpCodes = {
@@ -210,6 +234,14 @@ export const OpCodes = {
   COUNT: 3,
   MIN: 4,
   MAX: 5,
+};
+
+export const KAnonymityLevels = {
+  NONE: 0,
+  MINIMAL: 3,
+  STANDARD: 5,
+  HIGH: 10,
+  MAXIMUM: 50,
 };
 
 export function createDefaultJobParams() {
@@ -272,30 +304,6 @@ export async function deployJobManagerFixture(datasetRegistryContractAddress: st
   const jobManagerContractAddress = await jobManagerContract.getAddress();
 
   return { jobManagerContract, jobManagerContractAddress };
-}
-
-// Dataset creation and registration utilities
-export async function createAndRegisterDataset(
-  datasetRegistryContract: DatasetRegistry,
-  jobManagerAddress: string,
-  datasetOwner: HardhatEthersSigner,
-  rowConfigs: RowConfig[][],
-  datasetId: number,
-): Promise<TestDataset> {
-  const dataset = createDefaultDatasetParams(datasetId);
-
-  const testData = await generateTestDatasetWithCustomConfig(jobManagerAddress, datasetOwner, rowConfigs, datasetId);
-  dataset.rows = testData.rows;
-  dataset.merkleRoot = testData.root;
-  dataset.proofs = testData.proofs;
-  dataset.numColumns = testData.numColumns;
-  dataset.rowCount = testData.rows.length;
-
-  await datasetRegistryContract
-    .connect(datasetOwner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, 0);
-
-  return dataset;
 }
 
 // Job execution utilities

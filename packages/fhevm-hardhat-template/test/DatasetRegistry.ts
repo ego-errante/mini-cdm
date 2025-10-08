@@ -2,7 +2,7 @@ import { DatasetRegistry, DatasetRegistry__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
-import { getDatasetObject } from "./utils";
+import { getDatasetObject, KAnonymityLevels } from "./utils";
 
 describe("DatasetRegistry", function () {
   let signers: Signers;
@@ -31,11 +31,15 @@ describe("DatasetRegistry", function () {
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
 
+      const kAnonymity = KAnonymityLevels.NONE;
+
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0),
+        datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(datasetId, rowCount, merkleRoot, numColumns, kAnonymity),
       )
         .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(datasetId, merkleRoot, numColumns, rowCount, signers.alice.address, 0);
+        .withArgs(datasetId, merkleRoot, numColumns, rowCount, signers.alice.address, kAnonymity);
 
       // Verify the dataset was stored correctly
       const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
@@ -58,17 +62,22 @@ describe("DatasetRegistry", function () {
       const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
       const newSchema = 4;
 
+      const initialKAnonymity = KAnonymityLevels.NONE;
+      const updateKAnonymity = KAnonymityLevels.NONE;
+
       // Initial commit
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, originalRowCount, originalRoot, originalSchema, 0);
+        .commitDataset(datasetId, originalRowCount, originalRoot, originalSchema, initialKAnonymity);
 
       // Update by same owner
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, newRowCount, newRoot, newSchema, 0),
+        datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(datasetId, newRowCount, newRoot, newSchema, updateKAnonymity),
       )
         .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(datasetId, newRoot, newSchema, newRowCount, signers.alice.address, 0);
+        .withArgs(datasetId, newRoot, newSchema, newRowCount, signers.alice.address, updateKAnonymity);
 
       // Verify updated values
       const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
@@ -84,8 +93,12 @@ describe("DatasetRegistry", function () {
       const zeroRoot = ethers.ZeroHash;
       const numColumns = 3;
 
+      const invalidMerkleKAnonymity = KAnonymityLevels.NONE;
+
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, zeroRoot, numColumns, 0),
+        datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(datasetId, rowCount, zeroRoot, numColumns, invalidMerkleKAnonymity),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidMerkleRoot");
     });
 
@@ -95,8 +108,12 @@ describe("DatasetRegistry", function () {
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const zeroColumns = 0;
 
+      const zeroColumnsKAnonymity = KAnonymityLevels.NONE;
+
       await expect(
-        datasetRegistryContract.connect(signers.alice).commitDataset(datasetId, rowCount, merkleRoot, zeroColumns, 0),
+        datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(datasetId, rowCount, merkleRoot, zeroColumns, zeroColumnsKAnonymity),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidNumColumns");
     });
 
@@ -105,19 +122,23 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const initialCommitKAnonymity = KAnonymityLevels.NONE;
 
       // Alice commits first
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, initialCommitKAnonymity);
 
       // Bob tries to update - should fail
       const newRowCount = 1500;
       const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
       const newSchema = 5;
+      const bobUpdateKAnonymity = KAnonymityLevels.NONE;
 
       await expect(
-        datasetRegistryContract.connect(signers.bob).commitDataset(datasetId, newRowCount, newRoot, newSchema, 0),
+        datasetRegistryContract
+          .connect(signers.bob)
+          .commitDataset(datasetId, newRowCount, newRoot, newSchema, bobUpdateKAnonymity),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "NotDatasetOwner");
     });
 
@@ -134,13 +155,16 @@ describe("DatasetRegistry", function () {
       const bobRoot = ethers.keccak256(ethers.toUtf8Bytes("bob_root"));
       const bobSchema = 4;
 
+      const aliceKAnonymity = KAnonymityLevels.NONE;
+      const bobKAnonymity = KAnonymityLevels.NONE;
+
       // Both commit their datasets
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(aliceDatasetId, aliceRowCount, aliceRoot, aliceSchema, 0);
+        .commitDataset(aliceDatasetId, aliceRowCount, aliceRoot, aliceSchema, aliceKAnonymity);
       await datasetRegistryContract
         .connect(signers.bob)
-        .commitDataset(bobDatasetId, bobRowCount, bobRoot, bobSchema, 0);
+        .commitDataset(bobDatasetId, bobRowCount, bobRoot, bobSchema, bobKAnonymity);
 
       // Verify Alice's dataset
       const aliceDataset = await getDatasetObject(datasetRegistryContract, aliceDatasetId);
@@ -166,10 +190,11 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const datasetKAnonymity = KAnonymityLevels.NONE;
 
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity);
 
       const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
       expect(dataset.merkleRoot).to.equal(merkleRoot);
@@ -195,11 +220,12 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const datasetKAnonymity = KAnonymityLevels.NONE;
 
       // Create dataset
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity);
 
       // Verify it exists
       let dataset = await getDatasetObject(datasetRegistryContract, datasetId);
@@ -226,11 +252,12 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const datasetKAnonymity = KAnonymityLevels.NONE;
 
       // Alice creates dataset
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity);
 
       // Bob tries to delete - should fail
       await expect(datasetRegistryContract.connect(signers.bob).deleteDataset(datasetId)).to.be.revertedWithCustomError(
@@ -254,10 +281,11 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const datasetKAnonymity = KAnonymityLevels.NONE;
 
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.alice.address)).to.be.true;
     });
@@ -267,10 +295,11 @@ describe("DatasetRegistry", function () {
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
+      const datasetKAnonymity = KAnonymityLevels.NONE;
 
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, 0);
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.bob.address)).to.be.false;
     });

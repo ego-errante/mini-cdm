@@ -13,6 +13,7 @@ import {
   generateTestDatasetWithEncryption,
   TestDataset,
   OpCodes,
+  KAnonymityLevels,
   RowConfig,
   createAndRegisterDataset,
   executeJobAndDecryptResult,
@@ -297,7 +298,7 @@ describe("JobManager", function () {
       const wrongSchemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [2])); // Schema for 2 columns
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(2, correctRowDataset.rows.length, correctRowDataset.root, wrongSchemaHash, 0);
+        .commitDataset(2, correctRowDataset.rows.length, correctRowDataset.root, wrongSchemaHash, KAnonymityLevels.NONE);
 
       const jobParams = createDefaultJobParams();
 
