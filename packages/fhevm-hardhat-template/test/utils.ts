@@ -225,7 +225,7 @@ export function createDefaultJobParams() {
     roundBucket: 0,
     filter: {
       bytecode: "0x",
-      consts: [],
+      consts: [] as number[],
     },
   };
 }
@@ -365,7 +365,7 @@ export interface CompiledFilter {
  * @param dsl The filter DSL expression
  * @returns Compiled bytecode and constants for FilterProg
  */
-export function compileFilterDSL(dsl: FilterDSL): CompiledFilter {
+export function compileFilterDSL(dsl: FilterDSL, validate: boolean = true): CompiledFilter {
   const MAX_STACK_DEPTH = 8;
 
   /**
@@ -394,7 +394,7 @@ export function compileFilterDSL(dsl: FilterDSL): CompiledFilter {
 
   // Validate stack depth before compiling
   const requiredStackDepth = getExpressionMaxDepth(dsl);
-  if (requiredStackDepth > MAX_STACK_DEPTH) {
+  if (validate && requiredStackDepth > MAX_STACK_DEPTH) {
     throw new Error(`Filter DSL exceeds max stack depth. Required: ${requiredStackDepth}, Max: ${MAX_STACK_DEPTH}`);
   }
 

@@ -29,6 +29,7 @@ import {
   and,
   or,
   not,
+  FilterDSL,
 } from "./utils";
 
 describe("JobManager", function () {
@@ -854,6 +855,213 @@ describe("JobManager", function () {
       );
 
       expect(decryptedResult).to.equal(BigInt(3));
+    });
+  });
+
+  describe("Filter VM Error Handling", () => {
+    // Opcode constants for readable bytecode construction
+    const opcodes = {
+      PUSH_FIELD: 0x01,
+      PUSH_CONST: 0x02,
+      GT: 0x10,
+      GE: 0x11,
+      LT: 0x12,
+      LE: 0x13,
+      EQ: 0x14,
+      NE: 0x15,
+      AND: 0x20,
+      OR: 0x21,
+      NOT: 0x22,
+    } as const;
+
+    // Type-safe union of valid opcode names
+    type OpcodeName = keyof typeof opcodes;
+
+    /**
+     * Converts instruction arrays to bytecode hex string
+     * Instructions format: ['PUSH_FIELD', fieldIndex] | ['PUSH_CONST', constIndex] | ['GT'] | ['AND'] | etc.
+     */
+    function buildBytecode(instructions: (readonly [OpcodeName, ...number[]])[]): string {
+      const bytecode: number[] = [];
+
+      for (const instruction of instructions) {
+        const [opcodeName, ...params] = instruction;
+        const opcode = opcodes[opcodeName];
+        bytecode.push(opcode);
+
+        // Add parameter bytes (big endian for 16-bit values)
+        for (const param of params) {
+          bytecode.push((param >> 8) & 0xff, param & 0xff);
+        }
+      }
+
+      return "0x" + bytecode.map((b) => b.toString(16).padStart(2, "0")).join("");
+    }
+
+    it("should throw a client-side error for filters exceeding max stack depth", () => {
+      // Create a right-associative filter that requires a stack depth of 9
+      let deepFilter: FilterDSL = gt(0, 0);
+      for (let i = 1; i < 9; i++) {
+        deepFilter = and(gt(i, i), deepFilter);
+      }
+
+      const expectedError = `Filter DSL exceeds max stack depth. Required: 9, Max: 8`;
+      expect(() => compileFilterDSL(deepFilter)).to.throw(expectedError);
+    });
+
+    it("should revert with 'PUSH_FIELD: insufficient bytecode'", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_FIELD with only one byte for index (should be 2 bytes)
+      jobParams.filter.bytecode = "0x0100";
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("PUSH_FIELD: insufficient bytecode");
+    });
+
+    it("should revert with 'PUSH_FIELD: invalid field index'", async () => {
+      const jobParams = createDefaultJobParams();
+      // Dataset has 2 columns (index 0, 1). We try to access index 2.
+      jobParams.filter = compileFilterDSL(gt(2, 100), false);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("PUSH_FIELD: invalid field index");
+    });
+
+    it("should revert with 'PUSH_FIELD: value stack overflow'", async () => {
+      const jobParams = createDefaultJobParams();
+      // Push 9 values onto the value stack (max is 8)
+      const instructions = Array(9).fill(["PUSH_FIELD" as OpcodeName, 0]);
+      jobParams.filter.bytecode = buildBytecode(instructions);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("PUSH_FIELD: value stack overflow");
+    });
+
+    it("should revert with 'PUSH_CONST: invalid const index'", async () => {
+      const jobParams = createDefaultJobParams();
+      // We provide 1 const, but try to access const at index 1.
+      jobParams.filter = compileFilterDSL(gt(0, 100), false);
+      jobParams.filter.consts = []; // Remove consts to make it invalid
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("PUSH_CONST: invalid const index");
+    });
+
+    it("should revert with 'Comparator: value stack underflow'", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_CONST 0, then GT (GT needs 1 value and 1 const, but we only push 1 const)
+      jobParams.filter.bytecode = buildBytecode([["PUSH_CONST", 0], ["GT"]]);
+      jobParams.filter.consts = [100];
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Comparator: value stack underflow");
+    });
+
+    it("should revert with 'Comparator: const stack underflow'", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_FIELD 0, then GT (GT needs 1 value and 1 const, but we push no consts)
+      jobParams.filter.bytecode = buildBytecode([["PUSH_FIELD", 0], ["GT"]]);
+      jobParams.filter.consts = [];
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Comparator: const stack underflow");
+    });
+
+    it("should revert with 'NOT: bool stack underflow'", async () => {
+      const jobParams = createDefaultJobParams();
+      // NOT without any preceding boolean expression
+      jobParams.filter.bytecode = buildBytecode([["NOT"]]);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("NOT: bool stack underflow");
+    });
+
+    it("should revert with 'AND/OR: bool stack underflow'", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_FIELD 0, PUSH_CONST 0, GT (leaves 1 on bool stack), then AND (needs 2)
+      const gtBytecode = compileFilterDSL(gt(0, 100), false);
+      jobParams.filter.bytecode = gtBytecode.bytecode + buildBytecode([["AND"]]).slice(2); // Remove 0x prefix
+      jobParams.filter.consts = gtBytecode.consts;
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("AND/OR: bool stack underflow");
+    });
+
+    it("should revert with 'Unknown opcode'", async () => {
+      const jobParams = createDefaultJobParams();
+      jobParams.filter.bytecode = "0xff"; // Invalid opcode
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Unknown opcode");
+    });
+
+    it("should revert with 'invalid final stack state' (empty stack)", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_FIELD 0 without any boolean operations - leaves value stack non-empty
+      jobParams.filter.bytecode = buildBytecode([["PUSH_FIELD", 0]]);
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Filter VM: invalid final stack state - must have exactly one boolean result");
+    });
+
+    it("should revert with 'invalid final stack state' (too many results)", async () => {
+      const jobParams = createDefaultJobParams();
+      // Two comparisons against the same field: `gt(0, 10)` and `lt(0, 20)`.
+      // This leaves two boolean values on the stack without a final logical operator.
+      jobParams.filter.bytecode = buildBytecode([
+        ["PUSH_FIELD", 0],
+        ["PUSH_CONST", 0],
+        ["GT"], // field[0] > 10
+        ["PUSH_FIELD", 0],
+        ["PUSH_CONST", 1],
+        ["LT"], // field[0] < 20
+      ]);
+      jobParams.filter.consts = [10, 20];
+
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Filter VM: invalid final stack state - must have exactly one boolean result");
+    });
+
+    it("should revert with 'value stack not empty after execution'", async () => {
+      const jobParams = createDefaultJobParams();
+      // PUSH_FIELD 0 (for value stack), then a valid boolean expression `gt(0, 10)`.
+      // This leaves a value on the valueStack after the boolean result is generated.
+      jobParams.filter.bytecode = buildBytecode([
+        ["PUSH_FIELD", 0], // This stays on value stack
+        ["PUSH_FIELD", 0],
+        ["PUSH_CONST", 0],
+        ["GT"], // This creates boolean result
+      ]);
+      jobParams.filter.consts = [10];
+
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId = (await jobManagerContract.nextJobId()) - 1n;
+      await expect(
+        jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
+      ).to.be.revertedWith("Filter VM: value stack not empty after execution");
     });
   });
 });
