@@ -722,6 +722,372 @@ describe("JobManager", function () {
       }
     });
 
+    it("CLAMP: should clamp result to minimum value when result is below clampMin", async () => {
+      const datasetId = 9;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with small values that will sum to less than clampMin
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 1 },
+          { type: "euint8", value: 10 },
+        ],
+        [
+          { type: "euint8", value: 2 },
+          { type: "euint8", value: 15 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const clampMinJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        clampMin: 10, // Sum should be 3, but will be clamped to 10
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        clampMinJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 1 + 2 = 3, but clamped to min of 10
+      expect(decryptedResult).to.equal(BigInt(10));
+    });
+
+    it("CLAMP: should clamp result to maximum value when result is above clampMax", async () => {
+      const datasetId = 10;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with large values that will sum to more than clampMax
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 50 },
+          { type: "euint8", value: 100 },
+        ],
+        [
+          { type: "euint8", value: 60 },
+          { type: "euint8", value: 150 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const clampMaxJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        clampMax: 50, // Sum should be 110, but will be clamped to 50
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        clampMaxJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 50 + 60 = 110, but clamped to max of 50
+      expect(decryptedResult).to.equal(BigInt(50));
+    });
+
+    it("CLAMP: should apply both clampMin and clampMax bounds", async () => {
+      const datasetId = 11;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with values in normal range
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 20 },
+          { type: "euint8", value: 30 },
+        ],
+        [
+          { type: "euint8", value: 25 },
+          { type: "euint8", value: 35 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const clampBothJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        clampMin: 30, // Sum should be 45, clamped to 40
+        clampMax: 40,
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        clampBothJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 20 + 25 = 45, clamped to max of 40
+      expect(decryptedResult).to.equal(BigInt(40));
+    });
+
+    it("ROUND: should round values near the top of bucket to bucket ceiling", async () => {
+      const datasetId = 12;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset that sums to 47
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 15 },
+          { type: "euint8", value: 20 },
+        ],
+        [
+          { type: "euint8", value: 16 },
+          { type: "euint8", value: 25 },
+        ],
+        [
+          { type: "euint8", value: 16 },
+          { type: "euint8", value: 30 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const roundBucketJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        roundBucket: 10, // 47 rounds to 50 (nearest multiple of 10)
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        roundBucketJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 15 + 16 + 16 = 47, rounded to nearest 10 = 50
+      expect(decryptedResult).to.equal(BigInt(50));
+    });
+
+    it("ROUND: should round values near bottom of bucket to bucket floor", async () => {
+      const datasetId = 15;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with small values near bottom of 10-unit buckets
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 1 }, // rounds to 0
+          { type: "euint8", value: 2 }, // rounds to 0
+        ],
+        [
+          { type: "euint8", value: 3 }, // rounds to 0
+          { type: "euint8", value: 4 }, // rounds to 0
+        ],
+        [
+          { type: "euint8", value: 6 }, // rounds to 10 (crosses midpoint)
+          { type: "euint8", value: 7 }, // rounds to 10
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const roundBucketJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        roundBucket: 10, // Round to nearest 10
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        roundBucketJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 1 + 3 + 6 = 10, rounded to nearest 10 = 10
+      expect(decryptedResult).to.equal(BigInt(10));
+    });
+
+    it("ROUND: should round up when result is halfway between buckets", async () => {
+      const datasetId = 13;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset that sums to 25 (halfway between 20 and 30)
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 10 },
+          { type: "euint8", value: 15 },
+        ],
+        [
+          { type: "euint8", value: 15 },
+          { type: "euint8", value: 20 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const roundBucketJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        roundBucket: 10, // 25 rounds up to 30 (nearest rounding)
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        roundBucketJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 10 + 15 = 25, rounded to nearest 10 = 30 (rounds up from halfway point)
+      expect(decryptedResult).to.equal(BigInt(30));
+    });
+
+    it("ROUND: should handle roundBucket of 1 (no rounding)", async () => {
+      const datasetId = 14;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      // Create dataset with odd sum
+      const rowConfigs = [
+        [
+          { type: "euint8", value: 7 },
+          { type: "euint8", value: 12 },
+        ],
+        [
+          { type: "euint8", value: 8 },
+          { type: "euint8", value: 13 },
+        ],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const roundBucketJobParams = {
+        ...createDefaultJobParams(),
+        targetField: 0,
+        op: OpCodes.SUM,
+        roundBucket: 1, // No rounding
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        dataset,
+        roundBucketJobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Expected sum: 7 + 8 = 15, no rounding applied
+      expect(decryptedResult).to.equal(BigInt(15));
+    });
+
     // it("should track last use timestamp for cooldown", async () => {
   });
 

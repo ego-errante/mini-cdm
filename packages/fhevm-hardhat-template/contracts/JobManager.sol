@@ -250,7 +250,14 @@ contract JobManager is IJobManager, SepoliaConfig {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
 
-        // TODO: Apply post-processing (clamp, roundBucket) in Step 6
+        // Apply post-processing (clamp, roundBucket) in Step 6
+        if (params.clampMin > 0 || params.clampMax > 0) {
+            result = _clamp(result, params.clampMin, params.clampMax);
+        }
+        if (params.roundBucket > 0) {
+            result = _roundBucket(result, params.roundBucket);
+        }
+
         // TODO: Apply privacy gates (k-anonymity, cooldown) in Step 7
 
         _jobs[jobId].isOpen = false;
@@ -514,5 +521,47 @@ contract JobManager is IJobManager, SepoliaConfig {
         }
 
         return computedHash == root;
+    }
+
+    // ---- Step 6: Post-processing helpers ----
+    /// @notice Clamps an encrypted value to the specified min/max bounds
+    /// @param value The encrypted value to clamp
+    /// @param minBound The minimum bound (0 means no minimum)
+    /// @param maxBound The maximum bound (0 means no maximum)
+    /// @return The clamped encrypted value
+    function _clamp(euint64 value, uint64 minBound, uint64 maxBound) internal returns (euint64) {
+        euint64 clamped = value;
+
+        // Apply minimum bound if specified
+        if (minBound > 0) {
+            clamped = FHE.max(clamped, minBound);
+        }
+
+        // Apply maximum bound if specified
+        if (maxBound > 0) {
+            clamped = FHE.min(clamped, maxBound);
+        }
+
+        return clamped;
+    }
+
+    /// @notice Rounds an encrypted value to the nearest multiple of bucket size
+    /// @param value The encrypted value to round
+    /// @param bucket The bucket size to round to
+    /// @return The rounded encrypted value
+    function _roundBucket(euint64 value, uint32 bucket) internal returns (euint64) {
+        if (bucket == 0) return value;
+
+        // Convert bucket to uint64 for FHE operations
+        uint64 bucket64 = uint64(bucket);
+
+        // Calculate: ((value + bucket/2) / bucket) * bucket
+        // This rounds to nearest multiple, with halfway cases rounding up
+        euint64 halfBucket = FHE.asEuint64(bucket64 / 2);
+        euint64 sum = FHE.add(value, halfBucket);
+        euint64 quotient = FHE.div(sum, bucket64);
+        euint64 result = FHE.mul(quotient, bucket64);
+
+        return result;
     }
 }
