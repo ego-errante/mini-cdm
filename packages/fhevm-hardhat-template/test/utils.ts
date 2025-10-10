@@ -195,10 +195,11 @@ async function commitDataset(
   dataset.rowCount = testData.rows.length;
 
   const kAnonymity = KAnonymityLevels.NONE;
+  const cooldownSec = 0;
 
   await datasetRegistry
     .connect(owner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, kAnonymity);
+    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, kAnonymity, cooldownSec);
 
   return dataset;
 }
@@ -250,7 +251,6 @@ export function createDefaultJobParams() {
     targetField: 0,
     weights: [],
     divisor: 0,
-    cooldownSec: 0,
     clampMin: 0,
     clampMax: 0,
     roundBucket: 0,
@@ -281,13 +281,16 @@ export interface DatasetObject {
   rowCount: bigint;
   owner: string;
   exists: boolean;
+  kAnonymity: number;
+  cooldownSec: number;
 }
 
 export async function getDatasetObject(
   datasetRegistryContract: DatasetRegistry,
   datasetId: number,
 ): Promise<DatasetObject> {
-  const [merkleRoot, numColumns, rowCount, owner, exists] = await datasetRegistryContract.getDataset(datasetId);
+  const [merkleRoot, numColumns, rowCount, owner, exists, kAnonymity, cooldownSec] =
+    await datasetRegistryContract.getDataset(datasetId);
 
   return {
     merkleRoot,
@@ -295,6 +298,8 @@ export async function getDatasetObject(
     rowCount,
     owner,
     exists,
+    kAnonymity: Number(kAnonymity),
+    cooldownSec: Number(cooldownSec),
   };
 }
 
