@@ -116,6 +116,18 @@ contract JobManager is IJobManager, SepoliaConfig {
         address buyer,
         JobParams calldata params
     ) external returns (uint256 jobId) {
+        // Orchestrator function - delegates to smaller helper functions
+        _validateDatasetAccess(datasetId);
+        _validateJobParameters(datasetId, params);
+        _checkCooldownPeriod(buyer, datasetId);
+        jobId = _initializeJobState(datasetId, buyer, params);
+
+        emit JobOpened(jobId, datasetId, msg.sender);
+    }
+
+    /// @notice Validates that dataset exists and caller is owner
+    /// @param datasetId The dataset ID to validate
+    function _validateDatasetAccess(uint256 datasetId) internal view {
         if (!DATASET_REGISTRY.doesDatasetExist(datasetId)) {
             revert DatasetNotFound();
         }
@@ -123,15 +135,21 @@ contract JobManager is IJobManager, SepoliaConfig {
         if (!_isDatasetOwner(datasetId)) {
             revert NotDatasetOwner();
         }
+    }
 
-        // Validate job parameters
+    /// @notice Validates all job parameters against dataset constraints
+    /// @param datasetId The dataset ID
+    /// @param params The job parameters to validate
+    function _validateJobParameters(uint256 datasetId, JobParams calldata params) internal view {
+        // Validate divisor for AVG_P operation
         if (params.op == Op.AVG_P && params.divisor == 0) {
             revert CannotDivideByZero();
         }
 
-        // Get dataset info for validation
+        // Get dataset info for field validation
         (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
 
+        // Validate target field for operations that use it
         if (
             params.op == Op.SUM || params.op == Op.AVG_P || params.op == Op.MIN
                 || params.op == Op.MAX
@@ -141,10 +159,12 @@ contract JobManager is IJobManager, SepoliaConfig {
             }
         }
 
+        // Validate clamp range
         if (params.clampMax > 0 && params.clampMin > params.clampMax) {
             revert InvalidClampRange();
         }
 
+        // Validate filter bytecode and constants length
         if (params.filter.bytecode.length > MAX_FILTER_BYTECODE_LENGTH) {
             revert FilterBytecodeTooLong();
         }
@@ -152,13 +172,18 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert FilterConstsTooLong();
         }
 
+        // Validate weights length for WEIGHTED_SUM
         if (params.op == Op.WEIGHTED_SUM) {
             if (params.weights.length != numColumns) {
                 revert WeightsLengthMismatch();
             }
         }
+    }
 
-        // Check cooldown period
+    /// @notice Checks if cooldown period is active for buyer-dataset pair
+    /// @param buyer The buyer address
+    /// @param datasetId The dataset ID
+    function _checkCooldownPeriod(address buyer, uint256 datasetId) internal view {
         (,,,,,, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
         if (cooldownSec > 0) {
             bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
@@ -168,7 +193,18 @@ contract JobManager is IJobManager, SepoliaConfig {
                 revert CooldownActive();
             }
         }
+    }
 
+    /// @notice Initializes job state and returns job ID
+    /// @param datasetId The dataset ID
+    /// @param buyer The buyer address
+    /// @param params The job parameters
+    /// @return jobId The assigned job ID
+    function _initializeJobState(
+        uint256 datasetId,
+        address buyer,
+        JobParams calldata params
+    ) internal returns (uint256 jobId) {
         euint64 initValue = FHE.asEuint64(0);
         ebool initMinMaxInit = FHE.asEbool(false);
 
@@ -196,8 +232,6 @@ contract JobManager is IJobManager, SepoliaConfig {
         FHE.allowThis(initValue);
         FHE.allowThis(_state[jobId].kept);
         FHE.allowThis(initMinMaxInit);
-
-        emit JobOpened(jobId, datasetId, msg.sender);
     }
 
     function _isJobBuyer(uint256 jobId) internal view returns (bool) {
@@ -218,13 +252,28 @@ contract JobManager is IJobManager, SepoliaConfig {
         bytes32[] calldata merkleProof,
         uint256 rowIndex
     ) external {
-        // 1. Basic job validation
+        // Orchestrator function - delegates to smaller helper functions
+        // Fetch storage pointer once for gas efficiency
         Job storage job = _jobs[jobId];
+
+        _validateRowProcessing(job, jobId, rowIndex);
+        _verifyRowIntegrity(job, jobId, rowPacked, merkleProof, rowIndex);
+        _processRowData(job, jobId, rowPacked);
+
+        emit RowPushed(jobId);
+    }
+
+    /// @notice Validates job state and row processing order
+    /// @param job The storage pointer to the job
+    /// @param jobId The job ID
+    /// @param rowIndex The row index being processed
+    function _validateRowProcessing(Job storage job, uint256 jobId, uint256 rowIndex) internal view {
+        // Basic job validation
         if (!job.isOpen) {
             revert JobClosed();
         }
 
-        // 2. Enforce ascending sequential processing (since ops are order-independent, we can force ascending order)
+        // Enforce ascending sequential processing
         if (_jobLastProcessedRow[jobId] == type(uint256).max) {
             // No rows processed yet, expect rowIndex == 0
             if (rowIndex != 0) {
@@ -236,62 +285,103 @@ contract JobManager is IJobManager, SepoliaConfig {
                 revert RowOutOfOrder();
             }
         }
+    }
 
+    /// @notice Verifies dataset ownership and merkle proof integrity
+    /// @param job The storage pointer to the job
+    /// @param jobId The job ID
+    /// @param rowPacked The packed row data
+    /// @param merkleProof The merkle proof for the row
+    /// @param rowIndex The row index
+    function _verifyRowIntegrity(
+        Job storage job,
+        uint256 jobId,
+        bytes calldata rowPacked,
+        bytes32[] calldata merkleProof,
+        uint256 rowIndex
+    ) internal {
         uint256 datasetId = job.datasetId;
+
         if (!_isDatasetOwner(datasetId)) {
             revert NotDatasetOwner();
         }
 
-        // 3. Get dataset info from registry
+        // Get dataset info from registry
         (bytes32 merkleRoot, , , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
 
-        // 4. Compute expected leaf hash: keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked))
+        // Compute expected leaf hash
         bytes32 expectedLeaf = keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked));
 
-        // 5. Verify merkle proof
+        // Verify merkle proof
         if (!_verifyMerkleProof(merkleProof, rowIndex, expectedLeaf, merkleRoot)) {
             revert MerkleVerificationFailed();
         }
 
-        // 6. Update last processed row index
+        // Update last processed row index
         _jobLastProcessedRow[jobId] = rowIndex;
+    }
 
-        // 7. Decode row and process (streaming aggregation)
+    /// @notice Processes the row data through filtering and accumulation
+    /// @param job The storage pointer to the job
+    /// @param jobId The job ID
+    /// @param rowPacked The packed row data
+    function _processRowData(
+        Job storage job,
+        uint256 jobId,
+        bytes calldata rowPacked
+    ) internal {
+        uint256 datasetId = job.datasetId;
+        // Decode row and validate schema
         euint64[] memory fields = RowDecoder.decodeRowTo64(rowPacked);
 
         if (!DATASET_REGISTRY.isRowSchemaValid(datasetId, fields.length)) {
             revert InvalidRowSchema();
         }
 
+        // Get job parameters and process
         JobParams memory params = job.params;
-
-        // 8. Evaluate filter (Step 3: Filter VM skeleton)
         ebool keep = _evalFilter(params.filter, fields);
-
-        // 9. Update accumulators (Step 4: COUNT operation)
         _updateAccumulators(jobId, params, fields, keep);
-
-        emit RowPushed(jobId);
     }
 
     function finalize(uint256 jobId) external {
+        // Orchestrator function - delegates to smaller helper functions
+        // Fetch storage pointer once for gas efficiency
         Job storage job = _jobs[jobId];
+
+        _validateFinalization(job, jobId);
+        euint64 result = _computeJobResult(job, jobId);
+        result = _applyPostProcessing(job, result);
+        _finalizeJobState(job, result);
+
+        emit JobFinalized(jobId, job.buyer, result);
+    }
+
+    /// @notice Validates that job can be finalized (open and all rows processed)
+    /// @param job The storage pointer to the job to validate
+    /// @param jobId The job ID
+    function _validateFinalization(Job storage job, uint256 jobId) internal view {
         if (!job.isOpen) {
             revert JobClosed();
         }
 
         // Validate that all rows have been processed
         uint256 datasetId = job.datasetId;
-        (, , uint256 rowCount, , , , uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+        (, , uint256 rowCount, , , , ) = DATASET_REGISTRY.getDataset(datasetId);
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();
         }
+    }
 
+    /// @notice Computes the final result based on operation type
+    /// @param job The storage pointer to the job
+    /// @param jobId The job ID
+    /// @return result The computed encrypted result
+    function _computeJobResult(Job storage job, uint256 jobId) internal returns (euint64 result) {
         JobParams memory params = job.params;
         JobState memory state = _state[jobId];
 
-        euint64 result;
         // Return appropriate result based on operation type
         if (params.op == Op.COUNT) {
             result = FHE.asEuint64(state.kept);
@@ -309,34 +399,49 @@ contract JobManager is IJobManager, SepoliaConfig {
         } else {
             result = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
+    }
 
-        // Apply post-processing (clamp, roundBucket) in Step 6
+    /// @notice Applies post-processing transformations (clamp, roundBucket)
+    /// @param job The storage pointer to the job
+    /// @param result The result to post-process
+    /// @return processedResult The post-processed result
+    function _applyPostProcessing(Job storage job, euint64 result) internal returns (euint64 processedResult) {
+        processedResult = result;
+        JobParams memory params = job.params;
+
+        // Apply post-processing (clamp, roundBucket)
         if (params.clampMin > 0 || params.clampMax > 0) {
-            result = _clamp(result, params.clampMin, params.clampMax);
+            processedResult = _clamp(processedResult, params.clampMin, params.clampMax);
         }
         if (params.roundBucket > 0) {
-            result = _roundBucket(result, params.roundBucket);
+            processedResult = _roundBucket(processedResult, params.roundBucket);
         }
 
         // TODO: Apply privacy gates (k-anonymity) in Step 7
+    }
 
+    /// @notice Finalizes job state and handles cooldown
+    /// @param job The storage pointer to the job
+    /// @param result The final result
+    function _finalizeJobState(Job storage job, euint64 result) internal {
+        uint256 datasetId = job.datasetId;
+        address buyer = job.buyer;
+
+        // Update job state
         job.isOpen = false;
         job.isFinalized = true;
         job.result = result;
 
-        address buyer = job.buyer;
-
+        // Set FHE permissions
         FHE.allowThis(result);
         FHE.allow(result, buyer);
 
-
+        // Handle cooldown
+        (,,,,,, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
         if (cooldownSec > 0) {
             bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
             _lastUse[cooldownKey] = uint64(block.timestamp);
         }
-
-
-        emit JobFinalized(jobId, buyer, result);
     }
 
     // ========================================
