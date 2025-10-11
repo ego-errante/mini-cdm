@@ -15,6 +15,10 @@ import {RowDecoder} from "./RowDecoder.sol";
 
 
 contract JobManager is IJobManager, SepoliaConfig {
+    // ---- constants ----
+    uint256 constant MAX_FILTER_BYTECODE_LENGTH = 512;
+    uint256 constant MAX_FILTER_CONSTS_LENGTH = 64;
+
     // ---- Filter VM opcodes ----
     // Value operations
     uint8 constant PUSH_FIELD = 0x01;
@@ -105,9 +109,30 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert CannotDivideByZero();
         }
 
+        // Get dataset info for validation
+        (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
+
+        if (
+            params.op == Op.SUM || params.op == Op.AVG_P || params.op == Op.MIN
+                || params.op == Op.MAX
+        ) {
+            if (params.targetField >= numColumns) {
+                revert InvalidFieldIndex();
+            }
+        }
+
+        if (params.clampMax > 0 && params.clampMin > params.clampMax) {
+            revert InvalidClampRange();
+        }
+
+        if (params.filter.bytecode.length > MAX_FILTER_BYTECODE_LENGTH) {
+            revert FilterBytecodeTooLong();
+        }
+        if (params.filter.consts.length > MAX_FILTER_CONSTS_LENGTH) {
+            revert FilterConstsTooLong();
+        }
+
         if (params.op == Op.WEIGHTED_SUM) {
-            // Get expected field count from dataset registry
-            (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
             if (params.weights.length != numColumns) {
                 revert WeightsLengthMismatch();
             }

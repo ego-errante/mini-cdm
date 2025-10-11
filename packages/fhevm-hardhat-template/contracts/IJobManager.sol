@@ -78,4 +78,8 @@ interface IJobManager {
     error IncompleteProcessing();
     error CannotDivideByZero();
     error WeightsLengthMismatch();
+    error InvalidFieldIndex();
+    error InvalidClampRange();
+    error FilterBytecodeTooLong();
+    error FilterConstsTooLong();
 }

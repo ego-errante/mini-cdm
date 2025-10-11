@@ -169,6 +169,86 @@ describe("JobManager", function () {
         ).to.be.revertedWithCustomError(jobManagerContract, "CannotDivideByZero");
       }
     });
+
+    it("should reject openJob when targetField is out of bounds for operations that use it", async () => {
+      const operationsWithTargetField = [OpCodes.SUM, OpCodes.AVG_P, OpCodes.MIN, OpCodes.MAX];
+      const numColumns = firstDatasetColumns; // testDataset has 1 column (index 0)
+
+      for (const op of operationsWithTargetField) {
+        const jobParams = {
+          ...createDefaultJobParams(),
+          op: op,
+          targetField: numColumns, // Out of bounds - should be < numColumns
+          divisor: op === OpCodes.AVG_P ? 2 : 0, // Set divisor for AVG_P to avoid CannotDivideByZero
+          filter: {
+            bytecode: "0x", // Empty filter - accept all rows
+            consts: [],
+          },
+        };
+
+        // Alice tries to open job with invalid targetField
+        await expect(
+          jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice.address, jobParams),
+        ).to.be.revertedWithCustomError(jobManagerContract, "InvalidFieldIndex");
+      }
+    });
+
+    it("should reject openJob when clampMin > clampMax", async () => {
+      const jobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.SUM,
+        targetField: 0,
+        clampMin: 100,
+        clampMax: 50, // clampMin > clampMax should be rejected
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      // Alice tries to open job with invalid clamp range
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice.address, jobParams),
+      ).to.be.revertedWithCustomError(jobManagerContract, "InvalidClampRange");
+    });
+
+    it("should reject openJob when filter bytecode is too long", async () => {
+      const maxBytecodeLength = 512;
+      const oversizedBytecode = "0x" + "ff".repeat(maxBytecodeLength + 1); // 513 bytes
+
+      const jobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.COUNT,
+        filter: {
+          bytecode: oversizedBytecode,
+          consts: [],
+        },
+      };
+
+      // Alice tries to open job with oversized bytecode
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice.address, jobParams),
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterBytecodeTooLong");
+    });
+
+    it("should reject openJob when filter consts array is too long", async () => {
+      const maxConstsLength = 64;
+      const oversizedConsts = Array(maxConstsLength + 1).fill(0); // 65 elements
+
+      const jobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.COUNT,
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: oversizedConsts,
+        },
+      };
+
+      // Alice tries to open job with oversized consts array
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice.address, jobParams),
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterConstsTooLong");
+    });
   });
 
   describe("pushRow", () => {
