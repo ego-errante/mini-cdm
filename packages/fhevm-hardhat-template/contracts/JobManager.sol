@@ -199,7 +199,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         uint256 rowIndex
     ) external {
         // 1. Basic job validation
-        if (!_isJobOpen(jobId)) {
+        Job storage job = _jobs[jobId];
+        if (!job.isOpen) {
             revert JobClosed();
         }
 
@@ -216,7 +217,7 @@ contract JobManager is IJobManager, SepoliaConfig {
             }
         }
 
-        uint256 datasetId = _jobs[jobId].datasetId;
+        uint256 datasetId = job.datasetId;
         if (!_isDatasetOwner(datasetId)) {
             revert NotDatasetOwner();
         }
@@ -242,7 +243,7 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert InvalidRowSchema();
         }
 
-        JobParams memory params = _jobs[jobId].params;
+        JobParams memory params = job.params;
 
         // 8. Evaluate filter (Step 3: Filter VM skeleton)
         ebool keep = _evalFilter(params.filter, fields);
@@ -254,19 +255,20 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     function finalize(uint256 jobId) external {
-        if (!_isJobOpen(jobId)) {
+        Job storage job = _jobs[jobId];
+        if (!job.isOpen) {
             revert JobClosed();
         }
 
         // Validate that all rows have been processed
-        uint256 datasetId = _jobs[jobId].datasetId;
+        uint256 datasetId = job.datasetId;
         (, , uint256 rowCount, , , , uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();
         }
 
-        JobParams memory params = _jobs[jobId].params;
+        JobParams memory params = job.params;
         JobState memory state = _state[jobId];
 
         euint64 result;
@@ -298,11 +300,11 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // TODO: Apply privacy gates (k-anonymity) in Step 7
 
-        _jobs[jobId].isOpen = false;
-        _jobs[jobId].isFinalized = true;
-        _jobs[jobId].result = result;
+        job.isOpen = false;
+        job.isFinalized = true;
+        job.result = result;
 
-        address buyer = _jobs[jobId].buyer;
+        address buyer = job.buyer;
 
         FHE.allowThis(result);
         FHE.allow(result, buyer);
