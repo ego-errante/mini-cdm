@@ -10,6 +10,7 @@ import {
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
   setupTestDataset,
+  setupTestDatasetWithCooldown,
   generateTestDatasetWithEncryption,
   TestDataset,
   OpCodes,
@@ -1399,6 +1400,132 @@ describe("JobManager", function () {
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
       ).to.be.revertedWith("Filter VM: value stack not empty after execution");
+    });
+  });
+
+  describe("cooldown", () => {
+    it("should enforce cooldownSec between jobs for same buyer-dataset pair", async () => {
+      const cooldownSec = 10; // 10 seconds cooldown
+      const testDataset = await setupTestDatasetWithCooldown(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        100, // dataset ID
+        cooldownSec,
+      );
+
+      const jobParams = createDefaultJobParams();
+
+      // Open and execute first job
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId1 = 0;
+
+      // Push all rows and finalize first job
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(signers.alice).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+      await jobManagerContract.connect(signers.alice).finalize(jobId1);
+
+      // Immediately try to open second job - should fail due to cooldown
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams),
+      ).to.be.revertedWithCustomError(jobManagerContract, "CooldownActive");
+    });
+
+    it("should allow different buyers to run jobs on same dataset without cooldown", async () => {
+      const cooldownSec = 10;
+      const testDataset = await setupTestDatasetWithCooldown(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        101, // dataset ID
+        cooldownSec,
+      );
+
+      const jobParams = createDefaultJobParams();
+
+      // Bob runs first job
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId1 = 0;
+
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(signers.alice).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+      await jobManagerContract.connect(signers.alice).finalize(jobId1);
+
+      // Alice (different buyer) should be able to open job immediately on same dataset
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.deployer.address, jobParams),
+      ).to.emit(jobManagerContract, "JobOpened");
+    });
+
+    it("should allow same buyer to run jobs on different datasets without cooldown", async () => {
+      const cooldownSec = 10;
+
+      const testDataset1 = await setupTestDatasetWithCooldown(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        102, // dataset ID 1
+        cooldownSec,
+      );
+
+      const testDataset2 = await setupTestDatasetWithCooldown(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        103, // dataset ID 2
+        cooldownSec,
+      );
+
+      const jobParams = createDefaultJobParams();
+
+      // Bob runs job on first dataset
+      await jobManagerContract.connect(signers.alice).openJob(testDataset1.id, signers.bob.address, jobParams);
+      const jobId1 = 0;
+
+      for (let i = 0; i < testDataset1.rows.length; i++) {
+        await jobManagerContract
+          .connect(signers.alice)
+          .pushRow(jobId1, testDataset1.rows[i], testDataset1.proofs[i], i);
+      }
+      await jobManagerContract.connect(signers.alice).finalize(jobId1);
+
+      // Same buyer should be able to open job on different dataset immediately
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset2.id, signers.bob.address, jobParams),
+      ).to.emit(jobManagerContract, "JobOpened");
+    });
+
+    it("should allow jobs after cooldown period has passed", async () => {
+      const cooldownSec = 5; // Short cooldown for testing
+      const testDataset = await setupTestDatasetWithCooldown(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        signers.alice,
+        104, // dataset ID
+        cooldownSec,
+      );
+
+      const jobParams = createDefaultJobParams();
+
+      // Open and execute first job
+      await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
+      const jobId1 = 0;
+
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(signers.alice).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+      await jobManagerContract.connect(signers.alice).finalize(jobId1);
+
+      // Fast forward time past the cooldown period
+      await ethers.provider.send("evm_increaseTime", [cooldownSec + 1]);
+      await ethers.provider.send("evm_mine");
+
+      // Now open second job - should succeed
+      await expect(
+        jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams),
+      ).to.emit(jobManagerContract, "JobOpened");
     });
   });
 });

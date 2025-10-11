@@ -185,6 +185,16 @@ async function commitDataset(
   datasetId: number,
   testData: { rows: string[]; root: string; proofs: string[][]; numColumns: number },
 ): Promise<TestDataset> {
+  return commitDatasetWithCooldown(datasetRegistry, owner, datasetId, testData, 0);
+}
+
+async function commitDatasetWithCooldown(
+  datasetRegistry: DatasetRegistry,
+  owner: HardhatEthersSigner,
+  datasetId: number,
+  testData: { rows: string[]; root: string; proofs: string[][]; numColumns: number },
+  cooldownSec: number,
+): Promise<TestDataset> {
   const dataset = createDefaultDatasetParams(datasetId);
 
   // Populate dataset with generated test data
@@ -195,7 +205,6 @@ async function commitDataset(
   dataset.rowCount = testData.rows.length;
 
   const kAnonymity = KAnonymityLevels.NONE;
-  const cooldownSec = 0;
 
   await datasetRegistry
     .connect(owner)
@@ -214,6 +223,19 @@ export async function setupTestDataset(
 ): Promise<TestDataset> {
   const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId, numRows, numColumns);
   return commitDataset(datasetRegistry, owner, datasetId, testData);
+}
+
+export async function setupTestDatasetWithCooldown(
+  datasetRegistry: DatasetRegistry,
+  jobManagerAddress: string,
+  owner: HardhatEthersSigner,
+  datasetId: number,
+  cooldownSec: number,
+  numRows: number = 4,
+  numColumns: number = 1,
+): Promise<TestDataset> {
+  const testData = await generateTestDatasetWithEncryption(jobManagerAddress, owner, datasetId, numRows, numColumns);
+  return commitDatasetWithCooldown(datasetRegistry, owner, datasetId, testData, cooldownSec);
 }
 
 // Dataset creation and registration utilities

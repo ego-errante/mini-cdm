@@ -12,6 +12,8 @@ import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
 import {RowDecoder} from "./RowDecoder.sol";
+
+
 contract JobManager is IJobManager, SepoliaConfig {
     // ---- Filter VM opcodes ----
     // Value operations
@@ -108,6 +110,17 @@ contract JobManager is IJobManager, SepoliaConfig {
             (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
             if (params.weights.length != numColumns) {
                 revert WeightsLengthMismatch();
+            }
+        }
+
+        // Check cooldown period
+        (,,,,,, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+        if (cooldownSec > 0) {
+            bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
+            uint64 lastUse = _lastUse[cooldownKey];
+
+            if (lastUse > 0 && block.timestamp < lastUse + cooldownSec) {
+                revert CooldownActive();
             }
         }
 
@@ -222,7 +235,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // Validate that all rows have been processed
         uint256 datasetId = _jobs[jobId].datasetId;
-        (, , uint256 rowCount, , , , ) = DATASET_REGISTRY.getDataset(datasetId);
+        (, , uint256 rowCount, , , , uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();
@@ -258,16 +271,23 @@ contract JobManager is IJobManager, SepoliaConfig {
             result = _roundBucket(result, params.roundBucket);
         }
 
-        // TODO: Apply privacy gates (k-anonymity, cooldown) in Step 7
+        // TODO: Apply privacy gates (k-anonymity) in Step 7
 
         _jobs[jobId].isOpen = false;
         _jobs[jobId].isFinalized = true;
         _jobs[jobId].result = result;
-        
+
         address buyer = _jobs[jobId].buyer;
 
         FHE.allowThis(result);
         FHE.allow(result, buyer);
+
+
+        if (cooldownSec > 0) {
+            bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
+            _lastUse[cooldownKey] = uint64(block.timestamp);
+        }
+
 
         emit JobFinalized(jobId, buyer, result);
     }
