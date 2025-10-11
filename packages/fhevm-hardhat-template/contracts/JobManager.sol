@@ -15,7 +15,11 @@ import {RowDecoder} from "./RowDecoder.sol";
 
 
 contract JobManager is IJobManager, SepoliaConfig {
-    // ---- constants ----
+    // ========================================
+    // CONSTANTS AND OPCODES
+    // ========================================
+
+    // ---- Filter VM limits ----
     uint256 constant MAX_FILTER_BYTECODE_LENGTH = 512;
     uint256 constant MAX_FILTER_CONSTS_LENGTH = 64;
 
@@ -37,10 +41,16 @@ contract JobManager is IJobManager, SepoliaConfig {
     uint8 constant OR = 0x21;
     uint8 constant NOT = 0x22;
 
-    // ---- dependencies ----
+    // ========================================
+    // DEPENDENCIES
+    // ========================================
+
     IDatasetRegistry public immutable DATASET_REGISTRY;
 
-    // ---- structs ----
+    // ========================================
+    // STRUCTS
+    // ========================================
+
     struct Job {
         JobParams params;
         address buyer;
@@ -50,20 +60,6 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint64 result;
     }
 
-    constructor(address datasetRegistry) {
-        DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
-    }
-
-    // ---- state ----
-    uint256 private _nextJobId;
-    mapping(uint256 jobId => Job job) private _jobs;
-
-    // Job state accumulators
-    mapping(bytes32 key => uint64 timestamp) private _lastUse; // keccak(buyer,datasetId) -> last finalize ts
-
-    // Merkle proof verification: track last processed row per job (enforce ascending order)
-    mapping(uint256 jobId => uint256 lastRowIndex) private _jobLastProcessedRow; // jobId => lastProcessedRowIndex
-
     struct JobState {
         euint64 agg; // sum / weighted_sum accumulator
         euint64 minV;
@@ -71,9 +67,31 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint32 kept; // encrypted counter of kept rows
         ebool minMaxInit;
     }
+
+    // ========================================
+    // STATE VARIABLES
+    // ========================================
+
+    constructor(address datasetRegistry) {
+        DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
+    }
+
+    uint256 private _nextJobId;
+    mapping(uint256 jobId => Job job) private _jobs;
+
+    // Job state accumulators
     mapping(uint256 jobId => JobState jobState) private _state;
 
-    // ---- views ----
+    // Cooldown tracking: keccak(buyer,datasetId) -> last finalize timestamp
+    mapping(bytes32 key => uint64 timestamp) private _lastUse;
+
+    // Merkle proof verification: track last processed row per job (enforce ascending order)
+    mapping(uint256 jobId => uint256 lastRowIndex) private _jobLastProcessedRow;
+
+    // ========================================
+    // VIEW FUNCTIONS
+    // ========================================
+
     function nextJobId() external view returns (uint256) {
         return _nextJobId;
     }
@@ -90,7 +108,9 @@ contract JobManager is IJobManager, SepoliaConfig {
         return _jobs[jobId].datasetId;
     }
 
-    // ---- lifecycle ----
+    // ========================================
+    // JOB LIFECYCLE FUNCTIONS
+    // ========================================
     function openJob(
         uint256 datasetId,
         address buyer,
@@ -319,12 +339,11 @@ contract JobManager is IJobManager, SepoliaConfig {
         emit JobFinalized(jobId, buyer, result);
     }
 
-    // ---- Step 3: Filter VM implementation ----
-    // Phase 1: VM structure with opcodes
-    // Phase 2: PUSH_FIELD, PUSH_CONST
-    // Phase 3: Comparators (GT, GE, LT, LE, EQ, NE)
-    // Phase 4: Logical operations (AND, OR, NOT)
+    // ========================================
+    // IMPLEMENTATION FUNCTIONS
+    // ========================================
 
+    // ---- Filter VM Implementation ----
     /// @notice Evaluates filter bytecode against encrypted row fields
     /// @param filter The filter program with bytecode and constants
     /// @param fields The decrypted row fields as euint64 values
@@ -456,7 +475,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         return boolStack[0];
     }
 
-    // ---- Step 4: COUNT operation ----
+    // ---- Accumulator Updates ----
     /// @notice Updates job accumulators based on operation type and filter result
     /// @param jobId The job ID
     /// @param params The job parameters
@@ -511,7 +530,7 @@ contract JobManager is IJobManager, SepoliaConfig {
 
             // Only update if the row is kept. Otherwise, retain the old value.
             _state[jobId].minV = FHE.select(keep, newMinIfKept, currentMin);
-            
+
             // The accumulator is initialized if it was already initialized OR if this row was kept.
             _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
 
@@ -532,12 +551,12 @@ contract JobManager is IJobManager, SepoliaConfig {
             // The accumulator is initialized if it was already initialized OR if this row was kept.
             _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
 
-
             FHE.allowThis(_state[jobId].maxV);
             FHE.allowThis(_state[jobId].minMaxInit);
         }
     }
 
+    // ---- Merkle Proof Verification ----
     /// @notice Verifies a merkle proof against the expected leaf and root
     /// @param proof Array of proof elements
     /// @param index Position of the leaf in the tree
@@ -575,7 +594,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         return computedHash == root;
     }
 
-    // ---- Step 6: Post-processing helpers ----
+    // ---- Post-processing Helpers ----
     /// @notice Clamps an encrypted value to the specified min/max bounds
     /// @param value The encrypted value to clamp
     /// @param minBound The minimum bound (0 means no minimum)
