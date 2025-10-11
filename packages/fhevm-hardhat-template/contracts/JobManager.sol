@@ -551,19 +551,25 @@ contract JobManager is IJobManager, SepoliaConfig {
         bytes32 root
     ) internal pure returns (bool) {
         bytes32 computedHash = leaf;
-
         for (uint256 i = 0; i < proof.length; i++) {
             bytes32 proofElement = proof[i];
-
-            if (index % 2 == 0) {
-                // Left child: hash(current, proof)
-                computedHash = keccak256(abi.encodePacked(computedHash, proofElement));
-            } else {
-                // Right child: hash(proof, current)
-                computedHash = keccak256(abi.encodePacked(proofElement, computedHash));
+            assembly {
+                // Depending on whether the index is even or odd, we hash(computed, proof) or hash(proof, computed).
+                // We check for evenness with iszero(and(index, 1)), which is cheaper than mod(index, 2) == 0.
+                switch iszero(and(index, 1))
+                case 1 { // index is even: computedHash is on the left
+                    mstore(0x00, computedHash)
+                    mstore(0x20, proofElement)
+                }
+                default { // index is odd: proofElement is on the left
+                    mstore(0x00, proofElement)
+                    mstore(0x20, computedHash)
+                }
+                // Hash the 64-byte memory space from 0x00 to 0x40.
+                computedHash := keccak256(0x00, 0x40)
             }
-
-            index = index / 2;
+            // Right-shift by 1 is cheaper than division by 2.
+            index >>= 1;
         }
 
         return computedHash == root;
