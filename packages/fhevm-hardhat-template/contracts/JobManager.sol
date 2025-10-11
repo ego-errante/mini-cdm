@@ -58,6 +58,10 @@ contract JobManager is IJobManager, SepoliaConfig {
         bool isOpen;
         bool isFinalized;
         euint64 result;
+        // Cached dataset properties for gas optimization
+        bytes32 merkleRoot;
+        uint256 rowCount;
+        uint32 cooldownSec;
     }
 
     struct JobState {
@@ -118,9 +122,13 @@ contract JobManager is IJobManager, SepoliaConfig {
     ) external returns (uint256 jobId) {
         // Orchestrator function - delegates to smaller helper functions
         _validateDatasetAccess(datasetId);
-        _validateJobParameters(datasetId, params);
-        _checkCooldownPeriod(buyer, datasetId);
-        jobId = _initializeJobState(datasetId, buyer, params);
+
+        // Fetch dataset info once for gas optimization
+        (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, , , , uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+
+        _validateJobParameters(params, numColumns);
+        _checkCooldownPeriod(buyer, datasetId, cooldownSec);
+        jobId = _initializeJobState(datasetId, buyer, params, merkleRoot, rowCount, cooldownSec);
 
         emit JobOpened(jobId, datasetId, msg.sender);
     }
@@ -138,16 +146,13 @@ contract JobManager is IJobManager, SepoliaConfig {
     }
 
     /// @notice Validates all job parameters against dataset constraints
-    /// @param datasetId The dataset ID
     /// @param params The job parameters to validate
-    function _validateJobParameters(uint256 datasetId, JobParams calldata params) internal view {
+    /// @param numColumns The number of columns in the dataset
+    function _validateJobParameters(JobParams calldata params, uint256 numColumns) internal pure {
         // Validate divisor for AVG_P operation
         if (params.op == Op.AVG_P && params.divisor == 0) {
             revert CannotDivideByZero();
         }
-
-        // Get dataset info for field validation
-        (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
 
         // Validate target field for operations that use it
         if (
@@ -183,8 +188,8 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @notice Checks if cooldown period is active for buyer-dataset pair
     /// @param buyer The buyer address
     /// @param datasetId The dataset ID
-    function _checkCooldownPeriod(address buyer, uint256 datasetId) internal view {
-        (,,,,,, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+    /// @param cooldownSec The cooldown period in seconds
+    function _checkCooldownPeriod(address buyer, uint256 datasetId, uint32 cooldownSec) internal view {
         if (cooldownSec > 0) {
             bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
             uint64 lastUse = _lastUse[cooldownKey];
@@ -199,11 +204,17 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @param datasetId The dataset ID
     /// @param buyer The buyer address
     /// @param params The job parameters
+    /// @param merkleRoot The dataset merkle root
+    /// @param rowCount The dataset row count
+    /// @param cooldownSec The dataset cooldown period
     /// @return jobId The assigned job ID
     function _initializeJobState(
         uint256 datasetId,
         address buyer,
-        JobParams calldata params
+        JobParams calldata params,
+        bytes32 merkleRoot,
+        uint256 rowCount,
+        uint32 cooldownSec
     ) internal returns (uint256 jobId) {
         euint64 initValue = FHE.asEuint64(0);
         ebool initMinMaxInit = FHE.asEbool(false);
@@ -215,7 +226,10 @@ contract JobManager is IJobManager, SepoliaConfig {
             datasetId: datasetId,
             isOpen: true,
             isFinalized: false,
-            result: initValue
+            result: initValue,
+            merkleRoot: merkleRoot,
+            rowCount: rowCount,
+            cooldownSec: cooldownSec
         });
 
         _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
@@ -306,8 +320,8 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
-        // Get dataset info from registry
-        (bytes32 merkleRoot, , , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
+        // Use cached merkle root for gas optimization
+        bytes32 merkleRoot = job.merkleRoot;
 
         // Compute expected leaf hash
         bytes32 expectedLeaf = keccak256(abi.encodePacked(datasetId, rowIndex, rowPacked));
@@ -366,8 +380,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         }
 
         // Validate that all rows have been processed
-        uint256 datasetId = job.datasetId;
-        (, , uint256 rowCount, , , , ) = DATASET_REGISTRY.getDataset(datasetId);
+        uint256 rowCount = job.rowCount;
 
         if (_jobLastProcessedRow[jobId] != rowCount - 1) {
             revert IncompleteProcessing();
@@ -437,7 +450,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         FHE.allow(result, buyer);
 
         // Handle cooldown
-        (,,,,,, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+        uint32 cooldownSec = job.cooldownSec;
         if (cooldownSec > 0) {
             bytes32 cooldownKey = keccak256(abi.encodePacked(buyer, datasetId));
             _lastUse[cooldownKey] = uint64(block.timestamp);
