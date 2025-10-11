@@ -1335,7 +1335,7 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("PUSH_FIELD: insufficient bytecode");
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterVMInsufficientBytecode");
     });
 
     it("should revert with 'PUSH_FIELD: invalid field index'", async () => {
@@ -1346,7 +1346,7 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("PUSH_FIELD: invalid field index");
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterVMInvalidFieldIndex");
     });
 
     it("should revert with 'PUSH_FIELD: value stack overflow'", async () => {
@@ -1358,7 +1358,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("PUSH_FIELD: value stack overflow");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackOverflow")
+        .withArgs("value");
     });
 
     it("should revert with 'PUSH_CONST: invalid const index'", async () => {
@@ -1370,7 +1372,7 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("PUSH_CONST: invalid const index");
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterVMInvalidConstantIndex");
     });
 
     it("should revert with 'Comparator: value stack underflow'", async () => {
@@ -1382,7 +1384,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Comparator: value stack underflow");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackUnderflow")
+        .withArgs("value");
     });
 
     it("should revert with 'Comparator: const stack underflow'", async () => {
@@ -1394,7 +1398,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Comparator: const stack underflow");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackUnderflow")
+        .withArgs("const");
     });
 
     it("should revert with 'NOT: bool stack underflow'", async () => {
@@ -1405,7 +1411,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("NOT: bool stack underflow");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackUnderflow")
+        .withArgs("bool");
     });
 
     it("should revert with 'AND/OR: bool stack underflow'", async () => {
@@ -1418,7 +1426,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("AND/OR: bool stack underflow");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackUnderflow")
+        .withArgs("bool");
     });
 
     it("should revert with 'Unknown opcode'", async () => {
@@ -1428,7 +1438,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Unknown opcode");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMUnknownOpcode")
+        .withArgs(255);
     });
 
     it("should revert with 'invalid final stack state' (empty stack)", async () => {
@@ -1439,7 +1451,7 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Filter VM: invalid final stack state - must have exactly one boolean result");
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterVMInvalidFinalStackState");
     });
 
     it("should revert with 'invalid final stack state' (too many results)", async () => {
@@ -1460,7 +1472,7 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Filter VM: invalid final stack state - must have exactly one boolean result");
+      ).to.be.revertedWithCustomError(jobManagerContract, "FilterVMInvalidFinalStackState");
     });
 
     it("should revert with 'value stack not empty after execution'", async () => {
@@ -1479,7 +1491,9 @@ describe("JobManager", function () {
       const jobId = (await jobManagerContract.nextJobId()) - 1n;
       await expect(
         jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0),
-      ).to.be.revertedWith("Filter VM: value stack not empty after execution");
+      )
+        .to.be.revertedWithCustomError(jobManagerContract, "FilterVMStackNotEmpty")
+        .withArgs("value");
     });
   });
 

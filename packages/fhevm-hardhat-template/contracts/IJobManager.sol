@@ -82,4 +82,15 @@ interface IJobManager {
     error InvalidClampRange();
     error FilterBytecodeTooLong();
     error FilterConstsTooLong();
+
+    // Filter VM errors
+    error FilterVMUnknownOpcode(uint8 opcode);
+    error FilterVMInsufficientBytecode();
+    error FilterVMInvalidFieldIndex();
+    error FilterVMInvalidConstantIndex();
+    error FilterVMStackOverflow(string stackName);
+    error FilterVMStackUnderflow(string stackName);
+    error FilterVMInvalidFinalStackState();
+    error FilterVMStackNotEmpty(string stackName);
+
 }

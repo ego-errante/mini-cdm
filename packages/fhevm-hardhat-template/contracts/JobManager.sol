@@ -480,33 +480,33 @@ contract JobManager is IJobManager, SepoliaConfig {
 
             if (opcode == PUSH_FIELD) {
                 // PUSH_FIELD: read 16-bit field index, push encrypted field value
-                require(pc + 2 <= filter.bytecode.length, "PUSH_FIELD: insufficient bytecode");
+                if (pc + 2 > filter.bytecode.length) revert FilterVMInsufficientBytecode();
                 uint16 fieldIdx = (uint16(uint8(filter.bytecode[pc])) << 8) | uint16(uint8(filter.bytecode[pc + 1]));
                 pc += 2;
 
-                require(fieldIdx < fields.length, "PUSH_FIELD: invalid field index");
-                require(valueSp < valueStack.length, "PUSH_FIELD: value stack overflow");
+                if (fieldIdx >= fields.length) revert FilterVMInvalidFieldIndex();
+                if (valueSp >= valueStack.length) revert FilterVMStackOverflow("value");
 
                 valueStack[valueSp] = fields[fieldIdx];
                 valueSp++;
 
             } else if (opcode == PUSH_CONST) {
                 // PUSH_CONST: read 16-bit const index, push plaintext constant
-                require(pc + 2 <= filter.bytecode.length, "PUSH_CONST: insufficient bytecode");
+                if (pc + 2 > filter.bytecode.length) revert FilterVMInsufficientBytecode();
                 uint16 constIdx = (uint16(uint8(filter.bytecode[pc])) << 8) | uint16(uint8(filter.bytecode[pc + 1]));
                 pc += 2;
 
-                require(constIdx < filter.consts.length, "PUSH_CONST: invalid const index");
-                require(constSp < constStack.length, "PUSH_CONST: const stack overflow");
+                if (constIdx >= filter.consts.length) revert FilterVMInvalidConstantIndex();
+                if (constSp >= constStack.length) revert FilterVMStackOverflow("const");
 
                 constStack[constSp] = uint64(filter.consts[constIdx]);
                 constSp++;
 
             } else if (opcode >= GT && opcode <= NE) {
                 // Comparators: pop encrypted value and plaintext const, compare, push result
-                require(valueSp > 0, "Comparator: value stack underflow");
-                require(constSp > 0, "Comparator: const stack underflow");
-                require(boolSp < boolStack.length, "Comparator: bool stack overflow");
+                if (valueSp == 0) revert FilterVMStackUnderflow("value");
+                if (constSp == 0) revert FilterVMStackUnderflow("const");
+                if (boolSp >= boolStack.length) revert FilterVMStackOverflow("bool");
 
                 valueSp--;
                 constSp--;
@@ -534,20 +534,20 @@ contract JobManager is IJobManager, SepoliaConfig {
 
             } else if (opcode == NOT) {
                 // NOT: pop one boolean, perform logical NOT, push result
-                require(boolSp > 0, "NOT: bool stack underflow");
+                if (boolSp == 0) revert FilterVMStackUnderflow("bool");
 
                 boolSp--;
                 ebool operand = boolStack[boolSp];
 
                 ebool result = FHE.not(operand);
 
-                require(boolSp < boolStack.length, "NOT: bool stack overflow");
+                if (boolSp >= boolStack.length) revert FilterVMStackOverflow("bool");
                 boolStack[boolSp] = result;
                 boolSp++;
 
             } else if (opcode == AND || opcode == OR) {
                 // AND/OR: pop two booleans, perform logical operation, push result
-                require(boolSp >= 2, "AND/OR: bool stack underflow");
+                if (boolSp < 2) revert FilterVMStackUnderflow("bool");
 
                 boolSp -= 2;
                 ebool right = boolStack[boolSp];
@@ -560,21 +560,21 @@ contract JobManager is IJobManager, SepoliaConfig {
                     result = FHE.or(left, right);
                 }
 
-                require(boolSp < boolStack.length, "AND/OR: bool stack overflow");
+                if (boolSp >= boolStack.length) revert FilterVMStackOverflow("bool");
                 boolStack[boolSp] = result;
                 boolSp++;
 
             } else {
-                revert("Unknown opcode");
+                revert FilterVMUnknownOpcode(opcode);
             }
         }
 
         // Final result: boolean stack should contain exactly one value
-        require(boolSp == 1, "Filter VM: invalid final stack state - must have exactly one boolean result");
+        if (boolSp != 1) revert FilterVMInvalidFinalStackState();
 
         // All stacks should be empty except for the final boolean result
-        require(valueSp == 0, "Filter VM: value stack not empty after execution");
-        require(constSp == 0, "Filter VM: const stack not empty after execution");
+        if (valueSp != 0) revert FilterVMStackNotEmpty("value");
+        if (constSp != 0) revert FilterVMStackNotEmpty("const");
 
         // Return the final boolean result
         return boolStack[0];
