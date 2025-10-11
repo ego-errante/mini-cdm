@@ -506,14 +506,13 @@ contract JobManager is IJobManager, SepoliaConfig {
             euint64 currentMin = _state[jobId].minV;
             ebool isInitialized = _state[jobId].minMaxInit;
 
-            // if not initialized, new min is target value if row is kept, otherwise current value (0)
-            euint64 minIfNotInit = FHE.select(keep, targetValue, currentMin);
-            // if initialized, new min is min(current, target) if row is kept, otherwise current value
-            euint64 minIfInit = FHE.select(keep, FHE.min(currentMin, targetValue), currentMin);
+            // If initialized, the candidate is min(current, target). Otherwise, it's just the target value.
+            euint64 newMinIfKept = FHE.select(isInitialized, FHE.min(currentMin, targetValue), targetValue);
 
-            // select between the two based on whether we were already initialized
-            _state[jobId].minV = FHE.select(isInitialized, minIfInit, minIfNotInit);
-            // new state is (isInitialized OR keep)
+            // Only update if the row is kept. Otherwise, retain the old value.
+            _state[jobId].minV = FHE.select(keep, newMinIfKept, currentMin);
+            
+            // The accumulator is initialized if it was already initialized OR if this row was kept.
             _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
 
             FHE.allowThis(_state[jobId].minV);
@@ -524,15 +523,15 @@ contract JobManager is IJobManager, SepoliaConfig {
             euint64 currentMax = _state[jobId].maxV;
             ebool isInitialized = _state[jobId].minMaxInit;
 
-            // if not initialized, new max is target value if row is kept, otherwise current value (0)
-            euint64 maxIfNotInit = FHE.select(keep, targetValue, currentMax);
-            // if initialized, new max is max(current, target) if row is kept, otherwise current value
-            euint64 maxIfInit = FHE.select(keep, FHE.max(currentMax, targetValue), currentMax);
+            // If initialized, the candidate is max(current, target). Otherwise, it's just the target value.
+            euint64 newMaxIfKept = FHE.select(isInitialized, FHE.max(currentMax, targetValue), targetValue);
 
-            // select between the two based on whether we were already initialized
-            _state[jobId].maxV = FHE.select(isInitialized, maxIfInit, maxIfNotInit);
-            // new state is (isInitialized OR keep)
+            // Only update if the row is kept. Otherwise, retain the old value.
+            _state[jobId].maxV = FHE.select(keep, newMaxIfKept, currentMax);
+
+            // The accumulator is initialized if it was already initialized OR if this row was kept.
             _state[jobId].minMaxInit = FHE.or(isInitialized, keep);
+
 
             FHE.allowThis(_state[jobId].maxV);
             FHE.allowThis(_state[jobId].minMaxInit);
