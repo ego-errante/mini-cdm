@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {FHE, euint32, externalEuint32, externalEuint8, externalEuint64, euint64} from "@fhevm/solidity/lib/FHE.sol";
+import {FHE, euint32, externalEuint32, externalEuint8, externalEuint64, euint64, euint256, ebool} from "@fhevm/solidity/lib/FHE.sol";
 import "./IDatasetRegistry.sol";
 
 interface IJobManager {
@@ -62,7 +62,7 @@ interface IJobManager {
     // ---- events ----
     event JobOpened(uint256 indexed jobId, uint256 indexed datasetId, address indexed buyer);
     event RowPushed(uint256 indexed jobId);
-    event JobFinalized(uint256 indexed jobId, address indexed buyer, euint64 result);
+    event JobFinalized(uint256 indexed jobId, address indexed buyer, euint256 result, ebool isOverflow);
 
     // ---- errors ----
     error JobClosed();

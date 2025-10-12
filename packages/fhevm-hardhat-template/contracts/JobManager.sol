@@ -5,6 +5,7 @@ import {
     FHE,
     euint32,
     euint64,
+    euint256,
     ebool,
     externalEuint64
 } from "@fhevm/solidity/lib/FHE.sol";
@@ -57,7 +58,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         uint256 datasetId;
         bool isOpen;
         bool isFinalized;
-        euint64 result;
+        euint256 result;
         // Cached dataset properties for gas optimization
         bytes32 merkleRoot;
         uint256 rowCount;
@@ -71,6 +72,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint64 maxV;
         euint32 kept; // encrypted counter of kept rows
         ebool minMaxInit;
+        ebool isOverflow;
     }
 
     // ========================================
@@ -219,7 +221,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         uint32 cooldownSec,
         euint32 kAnonymity
     ) internal returns (uint256 jobId) {
-        euint64 initValue = FHE.asEuint64(0);
+        euint64 initValue64 = FHE.asEuint64(0);
+        euint256 initValue256 = FHE.asEuint256(0);
         ebool initMinMaxInit = FHE.asEbool(false);
 
         jobId = _nextJobId++;
@@ -229,7 +232,7 @@ contract JobManager is IJobManager, SepoliaConfig {
             datasetId: datasetId,
             isOpen: true,
             isFinalized: false,
-            result: initValue,
+            result: initValue256,
             merkleRoot: merkleRoot,
             rowCount: rowCount,
             cooldownSec: cooldownSec,
@@ -240,16 +243,19 @@ contract JobManager is IJobManager, SepoliaConfig {
 
         // Initialize job state with provided initial value
         _state[jobId] = JobState({
-            agg: initValue,
-            minV: initValue,
-            maxV: initValue,
-            kept: FHE.asEuint32(initValue),
-            minMaxInit: initMinMaxInit
+            agg: initValue64,
+            minV: initValue64,
+            maxV: initValue64,
+            kept: FHE.asEuint32(initValue64),
+            minMaxInit: initMinMaxInit,
+            isOverflow: FHE.asEbool(false)
         });
 
-        FHE.allowThis(initValue);
+        FHE.allowThis(initValue64);
+        FHE.allowThis(initValue256);
         FHE.allowThis(_state[jobId].kept);
         FHE.allowThis(initMinMaxInit);
+        FHE.allowThis(_state[jobId].isOverflow);
     }
 
     function _isJobBuyer(uint256 jobId) internal view returns (bool) {
@@ -368,11 +374,13 @@ contract JobManager is IJobManager, SepoliaConfig {
         Job storage job = _jobs[jobId];
 
         _validateFinalization(job, jobId);
-        euint64 result = _computeJobResult(job, jobId);
-        result = _applyPostProcessing(job, result);
-        _finalizeJobState(job, result);
 
-        emit JobFinalized(jobId, job.buyer, result);
+        ebool isOverflow = _state[jobId].isOverflow;
+
+        euint256 result = _computeJobResult(job, jobId);
+        _finalizeJobState(job, result, isOverflow);
+
+        emit JobFinalized(jobId, job.buyer, result, isOverflow);
     }
 
     /// @notice Validates that job can be finalized (open and all rows processed)
@@ -395,7 +403,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @param job The storage pointer to the job
     /// @param jobId The job ID
     /// @return result The computed encrypted result
-    function _computeJobResult(Job storage job, uint256 jobId) internal returns (euint64 result) {
+    function _computeJobResult(Job storage job, uint256 jobId) internal returns (euint256 result) {
         JobParams memory params = job.params;
         JobState memory state = _state[jobId];
 
@@ -418,16 +426,25 @@ contract JobManager is IJobManager, SepoliaConfig {
             actualResult = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
 
+        // Apply post-processing transformations (clamp, roundBucket) before k-anonymity check
+        euint64 processedResult = actualResult;
+        if (params.clampMin > 0 || params.clampMax > 0) {
+            processedResult = _clamp(processedResult, params.clampMin, params.clampMax);
+        }
+        if (params.roundBucket > 0) {
+            processedResult = _roundBucket(processedResult, params.roundBucket);
+        }
+
         // Apply k-anonymity privacy protection
         // Check if k-anonymity requirement is met
         ebool meetsAnonymity = FHE.ge(state.kept, job.kAnonymity);
 
         // Define a sentinel value to indicate k-anonymity failure.
-        // This is a very large number, highly unlikely to be a real result.
-        euint64 failureValue = FHE.asEuint64(type(uint64).max);
+        // Use uint128.max as sentinel to avoid ambiguity with valid uint64 results
+        euint256 failureValue = FHE.asEuint256(type(uint128).max);
 
         // Return actual result if k-anonymity is met, otherwise return the failure sentinel value
-        result = FHE.select(meetsAnonymity, actualResult, failureValue);
+        result = FHE.select(meetsAnonymity, FHE.asEuint256(processedResult), failureValue);
     }
 
     /// @notice Applies post-processing transformations (clamp, roundBucket)
@@ -450,7 +467,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @notice Finalizes job state and handles cooldown
     /// @param job The storage pointer to the job
     /// @param result The final result
-    function _finalizeJobState(Job storage job, euint64 result) internal {
+    function _finalizeJobState(Job storage job, euint256 result, ebool isOverflow) internal {
         uint256 datasetId = job.datasetId;
         address buyer = job.buyer;
 
@@ -462,6 +479,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         // Set FHE permissions
         FHE.allowThis(result);
         FHE.allow(result, buyer);
+        FHE.allow(isOverflow, buyer);
 
         // Handle cooldown
         uint32 cooldownSec = job.cooldownSec;
@@ -630,27 +648,58 @@ contract JobManager is IJobManager, SepoliaConfig {
             // SUM and AVG_P: add target field value when filter passes
             euint64 targetValue = fields[params.targetField];
             euint64 valueToAdd = FHE.select(keep, targetValue, FHE.asEuint64(0));
+            euint64 currentAgg = _state[jobId].agg;
+            euint64 nextAgg = FHE.add(currentAgg, valueToAdd);
 
-            _state[jobId].agg = FHE.add(_state[jobId].agg, valueToAdd);
+            ebool isOverflow = FHE.lt(nextAgg, currentAgg);
+            _state[jobId].isOverflow = FHE.or(_state[jobId].isOverflow, isOverflow);
+            _state[jobId].agg = nextAgg;
 
             FHE.allowThis(_state[jobId].agg);
+            FHE.allowThis(_state[jobId].isOverflow);
         } else if (params.op == Op.WEIGHTED_SUM) {
             // WEIGHTED_SUM: compute weighted sum of fields using sequential indices when filter passes
             euint64 weightedSum = FHE.asEuint64(0);
+            ebool isOverflow = FHE.asEbool(false);
 
             for (uint256 i = 0; i < params.weights.length; i++) {
                 uint16 weight = params.weights[i];
                 euint64 fieldValue = fields[i];
+
                 euint64 weightedValue = FHE.mul(fieldValue, uint64(weight));
 
-                weightedSum = FHE.add(weightedSum, weightedValue);
+                // Multiplication overflow check: if fieldValue > 0 and weight > 0, then weightedValue / weight should be fieldValue
+                ebool mulOverflow = FHE.and(
+                    FHE.gt(fieldValue, 0),
+                    FHE.select(
+                        FHE.asEbool(weight > 0),
+                        FHE.ne(FHE.div(weightedValue, uint64(weight)), fieldValue),
+                        FHE.asEbool(false)
+                    )
+                );
+
+                isOverflow = FHE.or(isOverflow, mulOverflow);
+
+                euint64 nextSum = FHE.add(weightedSum, weightedValue);
+                ebool addOverflow = FHE.lt(nextSum, weightedSum);
+
+                isOverflow = FHE.or(isOverflow, addOverflow);
+                weightedSum = nextSum;
             }
 
             // Add weighted sum to accumulator when filter passes
             euint64 valueToAdd = FHE.select(keep, weightedSum, FHE.asEuint64(0));
-            _state[jobId].agg = FHE.add(_state[jobId].agg, valueToAdd);
+            euint64 currentAgg = _state[jobId].agg;
+            euint64 nextAgg = FHE.add(currentAgg, valueToAdd);
+
+            ebool finalAddOverflow = FHE.lt(nextAgg, currentAgg);
+            isOverflow = FHE.or(isOverflow, finalAddOverflow);
+
+            _state[jobId].isOverflow = FHE.or(_state[jobId].isOverflow, FHE.select(keep, isOverflow, FHE.asEbool(false)));
+            _state[jobId].agg = nextAgg;
 
             FHE.allowThis(_state[jobId].agg);
+            FHE.allowThis(_state[jobId].isOverflow);
         } else if (params.op == Op.MIN) {
             // MIN: track minimum value of target field when filter passes
             euint64 targetValue = fields[params.targetField];

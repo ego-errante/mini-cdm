@@ -397,7 +397,7 @@ export async function executeJobAndDecryptResult(
   // Parse event and decrypt result
   const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
   const decryptedResult = await fhevm.userDecryptEuint(
-    FhevmType.euint64,
+    FhevmType.euint256,
     jobFinalizedEvent?.result,
     jobManagerContractAddress,
     jobBuyer,

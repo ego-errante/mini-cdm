@@ -431,12 +431,12 @@ describe("JobManager", function () {
 
       // Even the seller should be unable to decrypt the result
       await expect(
-        fhevm.userDecryptEuint(FhevmType.euint64, jobFinalizedEvent?.result, jobManagerContractAddress, signers.alice),
+        fhevm.userDecryptEuint(FhevmType.euint256, jobFinalizedEvent?.result, jobManagerContractAddress, signers.alice),
       ).to.be.rejected;
 
       // Verify buyer can decrypt the result
       await fhevm.userDecryptEuint(
-        FhevmType.euint64,
+        FhevmType.euint256,
         jobFinalizedEvent?.result,
         jobManagerContractAddress,
         signers.bob,
@@ -481,7 +481,7 @@ describe("JobManager", function () {
       const jobFinalizedEvent = parseJobFinalizedEvent(jobManagerContract, receipt);
 
       const decryptedResult = await fhevm.userDecryptEuint(
-        FhevmType.euint64,
+        FhevmType.euint256,
         jobFinalizedEvent?.result,
         jobManagerContractAddress,
         signers.bob,
@@ -1745,9 +1745,9 @@ describe("JobManager", function () {
           FhevmType,
         );
 
-        // When k-anonymity is not met, contract returns uint64.max as sentinel value
-        const uint64Max = BigInt(2) ** BigInt(64) - BigInt(1);
-        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(uint64Max);
+        // When k-anonymity is not met, contract returns uint128.max as sentinel value
+        const uint128Max = BigInt(2) ** BigInt(128) - BigInt(1);
+        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(uint128Max);
       }
     });
   });
