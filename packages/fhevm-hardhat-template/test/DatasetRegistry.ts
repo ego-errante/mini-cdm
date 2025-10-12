@@ -164,6 +164,40 @@ describe("DatasetRegistry", function () {
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidNumColumns");
     });
 
+    it("should reject commit with row count exceeding uint64 max", async () => {
+      // uint64 max is 2^64 - 1
+      const maxUint64RowCount = BigInt(2) ** BigInt(64) - BigInt(1);
+      const exceedingRowCount = maxUint64RowCount + 1n;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      const datasetId = 1;
+      // This test should fail because the contract doesn't validate max row count
+      // The row count exceeding uint64 max should be rejected to prevent overflow in aggregators
+      await expect(
+        datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(
+            datasetId,
+            exceedingRowCount,
+            merkleRoot,
+            numColumns,
+            encryptedKAnonymity,
+            inputProof,
+            cooldownSec,
+          ),
+      ).to.be.revertedWithCustomError(datasetRegistryContract, "RowCountExceedsUint64Max");
+    });
+
     it("should handle multiple datasets from different providers", async () => {
       // Alice's dataset
       const aliceRowCount = 1000;

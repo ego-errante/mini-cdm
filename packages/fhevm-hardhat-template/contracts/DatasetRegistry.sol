@@ -100,6 +100,9 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         if (rowCount == 0) {
             revert InvalidRowCount();
         }
+        if (rowCount > type(uint64).max) {
+            revert RowCountExceedsUint64Max();
+        }
         if (merkleRoot == bytes32(0)) {
             revert InvalidMerkleRoot();
         }

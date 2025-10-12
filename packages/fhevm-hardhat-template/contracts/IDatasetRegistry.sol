@@ -58,4 +58,5 @@ interface IDatasetRegistry {
     error InvalidRowSchema();
     error JobManagerNotSet();
     error InvalidJobManagerAddress();
+    error RowCountExceedsUint64Max();
 }
