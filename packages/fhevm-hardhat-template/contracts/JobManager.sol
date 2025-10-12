@@ -62,6 +62,7 @@ contract JobManager is IJobManager, SepoliaConfig {
         bytes32 merkleRoot;
         uint256 rowCount;
         uint32 cooldownSec;
+        euint32 kAnonymity;
     }
 
     struct JobState {
@@ -124,11 +125,11 @@ contract JobManager is IJobManager, SepoliaConfig {
         _validateDatasetAccess(datasetId);
 
         // Fetch dataset info once for gas optimization
-        (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, , , , uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+        (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, , , euint32 kAnonymity, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
 
         _validateJobParameters(params, numColumns);
         _checkCooldownPeriod(buyer, datasetId, cooldownSec);
-        jobId = _initializeJobState(datasetId, buyer, params, merkleRoot, rowCount, cooldownSec);
+        jobId = _initializeJobState(datasetId, buyer, params, merkleRoot, rowCount, cooldownSec, kAnonymity);
 
         emit JobOpened(jobId, datasetId, msg.sender);
     }
@@ -207,6 +208,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @param merkleRoot The dataset merkle root
     /// @param rowCount The dataset row count
     /// @param cooldownSec The dataset cooldown period
+    /// @param kAnonymity The dataset k-anonymity requirement (encrypted)
     /// @return jobId The assigned job ID
     function _initializeJobState(
         uint256 datasetId,
@@ -214,7 +216,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         JobParams calldata params,
         bytes32 merkleRoot,
         uint256 rowCount,
-        uint32 cooldownSec
+        uint32 cooldownSec,
+        euint32 kAnonymity
     ) internal returns (uint256 jobId) {
         euint64 initValue = FHE.asEuint64(0);
         ebool initMinMaxInit = FHE.asEbool(false);
@@ -229,7 +232,8 @@ contract JobManager is IJobManager, SepoliaConfig {
             result: initValue,
             merkleRoot: merkleRoot,
             rowCount: rowCount,
-            cooldownSec: cooldownSec
+            cooldownSec: cooldownSec,
+            kAnonymity: kAnonymity
         });
 
         _jobLastProcessedRow[jobId] = type(uint256).max; // Initialize to max to indicate no rows processed yet
@@ -395,23 +399,35 @@ contract JobManager is IJobManager, SepoliaConfig {
         JobParams memory params = job.params;
         JobState memory state = _state[jobId];
 
-        // Return appropriate result based on operation type
+        // Compute the actual result based on operation type
+        euint64 actualResult;
         if (params.op == Op.COUNT) {
-            result = FHE.asEuint64(state.kept);
+            actualResult = FHE.asEuint64(state.kept);
         } else if (params.op == Op.SUM) {
-            result = state.agg; // Return the accumulated sum
+            actualResult = state.agg; // Return the accumulated sum
         } else if (params.op == Op.AVG_P) {
             // Apply divisor to get average
-            result = FHE.div(state.agg, params.divisor);
+            actualResult = FHE.div(state.agg, params.divisor);
         } else if (params.op == Op.WEIGHTED_SUM) {
-            result = state.agg; // Return the accumulated weighted sum
+            actualResult = state.agg; // Return the accumulated weighted sum
         } else if (params.op == Op.MIN) {
-            result = state.minV; // Return the minimum value
+            actualResult = state.minV; // Return the minimum value
         } else if (params.op == Op.MAX) {
-            result = state.maxV; // Return the maximum value
+            actualResult = state.maxV; // Return the maximum value
         } else {
-            result = FHE.asEuint64(0); // placeholder for unimplemented ops
+            actualResult = FHE.asEuint64(0); // placeholder for unimplemented ops
         }
+
+        // Apply k-anonymity privacy protection
+        // Check if k-anonymity requirement is met
+        ebool meetsAnonymity = FHE.ge(state.kept, job.kAnonymity);
+
+        // Define a sentinel value to indicate k-anonymity failure.
+        // This is a very large number, highly unlikely to be a real result.
+        euint64 failureValue = FHE.asEuint64(type(uint64).max);
+
+        // Return actual result if k-anonymity is met, otherwise return the failure sentinel value
+        result = FHE.select(meetsAnonymity, actualResult, failureValue);
     }
 
     /// @notice Applies post-processing transformations (clamp, roundBucket)
@@ -429,8 +445,6 @@ contract JobManager is IJobManager, SepoliaConfig {
         if (params.roundBucket > 0) {
             processedResult = _roundBucket(processedResult, params.roundBucket);
         }
-
-        // TODO: Apply privacy gates (k-anonymity) in Step 7
     }
 
     /// @notice Finalizes job state and handles cooldown
@@ -605,19 +619,19 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint64[] memory fields,
         ebool keep
     ) internal {
+        // Always update the kept counter for k-anonymity checks
+        euint32 increment = FHE.select(keep, FHE.asEuint32(1), FHE.asEuint32(0));
+        _state[jobId].kept = FHE.add(_state[jobId].kept, increment);
+        FHE.allowThis(_state[jobId].kept);
+
         if (params.op == Op.COUNT) {
-            // COUNT: increment kept counter when filter passes
-            euint32 increment = FHE.select(keep, FHE.asEuint32(1), FHE.asEuint32(0));
-
-            _state[jobId].kept = FHE.add(_state[jobId].kept, increment);
-
-            FHE.allowThis(_state[jobId].kept);
+            // For COUNT, the "kept" counter is the result, so no other accumulation is needed.
         } else if (params.op == Op.SUM || params.op == Op.AVG_P) {
             // SUM and AVG_P: add target field value when filter passes
             euint64 targetValue = fields[params.targetField];
-            euint64 increment = FHE.select(keep, targetValue, FHE.asEuint64(0));
+            euint64 valueToAdd = FHE.select(keep, targetValue, FHE.asEuint64(0));
 
-            _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
+            _state[jobId].agg = FHE.add(_state[jobId].agg, valueToAdd);
 
             FHE.allowThis(_state[jobId].agg);
         } else if (params.op == Op.WEIGHTED_SUM) {
@@ -633,8 +647,8 @@ contract JobManager is IJobManager, SepoliaConfig {
             }
 
             // Add weighted sum to accumulator when filter passes
-            euint64 increment = FHE.select(keep, weightedSum, FHE.asEuint64(0));
-            _state[jobId].agg = FHE.add(_state[jobId].agg, increment);
+            euint64 valueToAdd = FHE.select(keep, weightedSum, FHE.asEuint64(0));
+            _state[jobId].agg = FHE.add(_state[jobId].agg, valueToAdd);
 
             FHE.allowThis(_state[jobId].agg);
         } else if (params.op == Op.MIN) {

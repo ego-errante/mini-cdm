@@ -1622,6 +1622,124 @@ describe("JobManager", function () {
       ).to.emit(jobManagerContract, "JobOpened");
     });
   });
+
+  describe("k-anonymity", () => {
+    const datasetId = 20;
+    let datasetOwner: HardhatEthersSigner;
+    let jobBuyer: HardhatEthersSigner;
+    const kAnonymityLevel = KAnonymityLevels.MINIMAL;
+    let dataset: TestDataset;
+
+    beforeEach(async () => {
+      datasetOwner = signers.alice;
+      jobBuyer = signers.bob;
+
+      // Dataset with 5 rows.
+      const rowConfigs: RowConfig[][] = [
+        [
+          { type: "euint32", value: 10 },
+          { type: "euint32", value: 100 },
+        ], // row 0
+        [
+          { type: "euint32", value: 20 },
+          { type: "euint32", value: 200 },
+        ], // row 1
+        [
+          { type: "euint32", value: 30 },
+          { type: "euint32", value: 300 },
+        ], // row 2
+        [
+          { type: "euint32", value: 40 },
+          { type: "euint32", value: 400 },
+        ], // row 3
+        [
+          { type: "euint32", value: 50 },
+          { type: "euint32", value: 500 },
+        ], // row 4
+      ];
+
+      dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+        kAnonymityLevel,
+      );
+    });
+
+    it("should return correct result when k-anonymity is met across all operations", async () => {
+      const filterMet = gt(0, 10); // field[0] > 10, keeps 4 rows (>= k)
+      const compiledFilterMet = compileFilterDSL(filterMet);
+
+      const operations = [
+        { name: "COUNT", op: OpCodes.COUNT, params: {}, expected: 4n },
+        { name: "SUM", op: OpCodes.SUM, params: { targetField: 0 }, expected: 140n },
+        { name: "AVG_P", op: OpCodes.AVG_P, params: { targetField: 0, divisor: 4 }, expected: 35n },
+        { name: "WEIGHTED_SUM", op: OpCodes.WEIGHTED_SUM, params: { weights: [2, 3] }, expected: 4480n },
+        { name: "MIN", op: OpCodes.MIN, params: { targetField: 0 }, expected: 20n },
+        { name: "MAX", op: OpCodes.MAX, params: { targetField: 0 }, expected: 50n },
+      ];
+
+      for (const opInfo of operations) {
+        const jobParams = {
+          ...createDefaultJobParams(),
+          op: opInfo.op,
+          filter: compiledFilterMet,
+          ...opInfo.params,
+        };
+
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
+          jobManagerContractAddress,
+          dataset,
+          jobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
+        );
+
+        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(opInfo.expected);
+      }
+    });
+
+    it("should return 0 when k-anonymity is not met across all operations", async () => {
+      const filterNotMet = gt(0, 40); // field[0] > 40, keeps 1 row (< k)
+      const compiledFilterNotMet = compileFilterDSL(filterNotMet);
+
+      const operations = [
+        { name: "COUNT", op: OpCodes.COUNT, params: {} },
+        { name: "SUM", op: OpCodes.SUM, params: { targetField: 0 } },
+        { name: "AVG_P", op: OpCodes.AVG_P, params: { targetField: 0, divisor: 1 } },
+        { name: "WEIGHTED_SUM", op: OpCodes.WEIGHTED_SUM, params: { weights: [2, 3] } },
+        { name: "MIN", op: OpCodes.MIN, params: { targetField: 0 } },
+        { name: "MAX", op: OpCodes.MAX, params: { targetField: 0 } },
+      ];
+
+      for (const opInfo of operations) {
+        const jobParams = {
+          ...createDefaultJobParams(),
+          op: opInfo.op,
+          filter: compiledFilterNotMet,
+          ...opInfo.params,
+        };
+
+        const { decryptedResult } = await executeJobAndDecryptResult(
+          jobManagerContract,
+          jobManagerContractAddress,
+          dataset,
+          jobParams,
+          datasetOwner,
+          jobBuyer,
+          fhevm,
+          FhevmType,
+        );
+
+        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(0n);
+      }
+    });
+  });
 });
 
 async function executeCountJob(
@@ -1652,32 +1770,3 @@ async function executeCountJob(
   const tx = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
   return await tx.wait();
 }
-
-// async function executeSumJob(
-//   jobManagerContract: JobManager,
-//   testDatasetOwner: HardhatEthersSigner,
-//   testDataset: TestDataset,
-//   buyer: HardhatEthersSigner,
-// ) {
-//   const sumJobParams = {
-//     ...createDefaultJobParams(),
-//     op: OpCodes.SUM,
-//     filter: {
-//       bytecode: "0x", // Empty filter - accept all rows
-//       consts: [],
-//     },
-//   };
-
-//   // Open a job with SUM operation
-//   await jobManagerContract.connect(testDatasetOwner).openJob(testDataset.id, buyer, sumJobParams);
-//   const jobId = 0;
-
-//   // Push all rows
-//   for (let i = 0; i < testDataset.rows.length; i++) {
-//     await jobManagerContract.connect(testDatasetOwner).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
-//   }
-
-//   // Finalize the job - should return encrypted sum
-//   const tx = await jobManagerContract.connect(testDatasetOwner).finalize(jobId);
-//   return await tx.wait();
-// }

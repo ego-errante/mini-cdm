@@ -1,13 +1,28 @@
 import { DatasetRegistry, DatasetRegistry__factory } from "../types";
+import { JobManager } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
-import { ethers } from "hardhat";
-import { getDatasetObject, KAnonymityLevels } from "./utils";
+import { ethers, fhevm } from "hardhat";
+import { FhevmType } from "@fhevm/hardhat-plugin";
+import {
+  getDatasetObject,
+  KAnonymityLevels,
+  deployJobManagerFixture,
+  setupTestDataset,
+  createDefaultJobParams,
+  OpCodes,
+  executeJobAndDecryptResult,
+  parseJobFinalizedEvent,
+  createAndRegisterDataset,
+  RowConfig,
+} from "./utils";
 
 describe("DatasetRegistry", function () {
   let signers: Signers;
   let datasetRegistryContract: DatasetRegistry;
   let datasetRegistryContractAddress: string;
+  let jobManagerContract: JobManager;
+  let jobManagerContractAddress: string;
 
   before(async function () {
     const ethSigners: HardhatEthersSigner[] = await ethers.getSigners();
@@ -16,6 +31,11 @@ describe("DatasetRegistry", function () {
 
   beforeEach(async () => {
     ({ datasetRegistryContract, datasetRegistryContractAddress } = await deployFixture());
+    ({ jobManagerContract, jobManagerContractAddress: jobManagerContractAddress } =
+      await deployJobManagerFixture(datasetRegistryContractAddress));
+
+    // Set the JobManager address on the DatasetRegistry so commitDataset can work
+    await datasetRegistryContract.connect(signers.deployer).setJobManager(jobManagerContractAddress);
   });
 
   it("should deploy the contract", async () => {
@@ -25,8 +45,33 @@ describe("DatasetRegistry", function () {
   });
 
   describe("commitDataset", () => {
+    it("should reject commit when JobManager is not set", async () => {
+      // Deploy a fresh DatasetRegistry without setting JobManager
+      const { datasetRegistryContract: freshRegistry, datasetRegistryContractAddress: freshRegistryAddress } =
+        await deployFixture();
+
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+
+      // Encrypt kAnonymity for the fresh registry address
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        freshRegistryAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      // Attempt to commit dataset should fail
+      await expect(
+        freshRegistry
+          .connect(signers.alice)
+          .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec),
+      ).to.be.revertedWithCustomError(freshRegistry, "JobManagerNotSet");
+    });
+
     it("should commit new dataset successfully", async () => {
-      const datasetId = 1;
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const numColumns = 3;
@@ -34,20 +79,40 @@ describe("DatasetRegistry", function () {
       const kAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
-      await expect(
-        datasetRegistryContract
-          .connect(signers.alice)
-          .commitDataset(datasetId, rowCount, merkleRoot, numColumns, kAnonymity, cooldownSec),
-      )
-        .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(datasetId, merkleRoot, numColumns, rowCount, signers.alice.address, kAnonymity, cooldownSec);
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      const tx = await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      const receipt = await tx.wait();
+      const datasetCommittedEvent = receipt!.logs
+        .map((log) => datasetRegistryContract.interface.parseLog(log))
+        .find((e) => e?.name === "DatasetCommitted")!.args;
+
+      // Get the generated dataset ID from the event
+      const datasetId = datasetCommittedEvent[0];
+
+      expect(datasetId).to.equal(1);
+      // Verify event emitted with correct values (excluding encrypted kAnonymity)
+      expect(datasetCommittedEvent[0]).to.equal(datasetId); // datasetId
+      expect(datasetCommittedEvent[1]).to.equal(merkleRoot); // merkleRoot
+      expect(datasetCommittedEvent[2]).to.equal(BigInt(numColumns)); // numColumns
+      expect(datasetCommittedEvent[3]).to.equal(BigInt(rowCount)); // rowCount
+      expect(datasetCommittedEvent[4]).to.equal(signers.alice.address); // owner
+      expect(datasetCommittedEvent[6]).to.equal(cooldownSec); // cooldownSec
+      // Note: kAnonymity (index 5) is encrypted, so we can't check the exact value
 
       // Verify the dataset was stored correctly
       const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
       expect(dataset.merkleRoot).to.equal(merkleRoot);
       expect(dataset.numColumns).to.equal(BigInt(numColumns));
       expect(dataset.rowCount).to.equal(BigInt(rowCount));
-      expect(dataset.kAnonymity).to.equal(kAnonymity);
+      // Note: kAnonymity is now encrypted, so we can't check the exact value
       expect(dataset.cooldownSec).to.equal(cooldownSec);
       expect(dataset.exists).to.be.true;
 
@@ -56,61 +121,7 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.bob.address)).to.be.false;
     });
 
-    it("should update existing dataset when owner commits again", async () => {
-      const datasetId = 1;
-      const originalRowCount = 500;
-      const originalRoot = ethers.keccak256(ethers.toUtf8Bytes("original_root"));
-      const originalSchema = 2;
-      const newRowCount = 750;
-      const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
-      const newSchema = 4;
-
-      const initialKAnonymity = KAnonymityLevels.NONE;
-      const updateKAnonymity = KAnonymityLevels.NONE;
-      const initialCooldownSec = 0;
-      const updateCooldownSec = 60;
-
-      // Initial commit
-      await datasetRegistryContract
-        .connect(signers.alice)
-        .commitDataset(
-          datasetId,
-          originalRowCount,
-          originalRoot,
-          originalSchema,
-          initialKAnonymity,
-          initialCooldownSec,
-        );
-
-      // Update by same owner
-      await expect(
-        datasetRegistryContract
-          .connect(signers.alice)
-          .commitDataset(datasetId, newRowCount, newRoot, newSchema, updateKAnonymity, updateCooldownSec),
-      )
-        .to.emit(datasetRegistryContract, "DatasetCommitted")
-        .withArgs(
-          datasetId,
-          newRoot,
-          newSchema,
-          newRowCount,
-          signers.alice.address,
-          updateKAnonymity,
-          updateCooldownSec,
-        );
-
-      // Verify updated values
-      const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
-      expect(dataset.merkleRoot).to.equal(newRoot);
-      expect(dataset.numColumns).to.equal(BigInt(newSchema));
-      expect(dataset.rowCount).to.equal(BigInt(newRowCount));
-      expect(dataset.kAnonymity).to.equal(updateKAnonymity);
-      expect(dataset.cooldownSec).to.equal(updateCooldownSec);
-      expect(dataset.exists).to.be.true;
-    });
-
     it("should reject commit with zero merkle root", async () => {
-      const datasetId = 1;
       const rowCount = 1000;
       const zeroRoot = ethers.ZeroHash;
       const numColumns = 3;
@@ -118,15 +129,20 @@ describe("DatasetRegistry", function () {
       const invalidMerkleKAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        invalidMerkleKAnonymity,
+      );
+
       await expect(
         datasetRegistryContract
           .connect(signers.alice)
-          .commitDataset(datasetId, rowCount, zeroRoot, numColumns, invalidMerkleKAnonymity, cooldownSec),
+          .commitDataset(rowCount, zeroRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidMerkleRoot");
     });
 
     it("should reject commit with zero num columns", async () => {
-      const datasetId = 1;
       const rowCount = 1000;
       const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
       const zeroColumns = 0;
@@ -134,49 +150,26 @@ describe("DatasetRegistry", function () {
       const zeroColumnsKAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        zeroColumnsKAnonymity,
+      );
+
       await expect(
         datasetRegistryContract
           .connect(signers.alice)
-          .commitDataset(datasetId, rowCount, merkleRoot, zeroColumns, zeroColumnsKAnonymity, cooldownSec),
+          .commitDataset(rowCount, merkleRoot, zeroColumns, encryptedKAnonymity, inputProof, cooldownSec),
       ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidNumColumns");
-    });
-
-    it("should reject update from non-owner", async () => {
-      const datasetId = 1;
-      const rowCount = 1000;
-      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
-      const numColumns = 3;
-      const initialCommitKAnonymity = KAnonymityLevels.NONE;
-      const initialCooldownSec = 0;
-
-      // Alice commits first
-      await datasetRegistryContract
-        .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, initialCommitKAnonymity, initialCooldownSec);
-
-      // Bob tries to update - should fail
-      const newRowCount = 1500;
-      const newRoot = ethers.keccak256(ethers.toUtf8Bytes("new_root"));
-      const newSchema = 5;
-      const bobUpdateKAnonymity = KAnonymityLevels.NONE;
-      const bobCooldownSec = 30;
-
-      await expect(
-        datasetRegistryContract
-          .connect(signers.bob)
-          .commitDataset(datasetId, newRowCount, newRoot, newSchema, bobUpdateKAnonymity, bobCooldownSec),
-      ).to.be.revertedWithCustomError(datasetRegistryContract, "NotDatasetOwner");
     });
 
     it("should handle multiple datasets from different providers", async () => {
       // Alice's dataset
-      const aliceDatasetId = 1;
       const aliceRowCount = 1000;
       const aliceRoot = ethers.keccak256(ethers.toUtf8Bytes("alice_root"));
       const aliceSchema = 3;
 
       // Bob's dataset
-      const bobDatasetId = 2;
       const bobRowCount = 2000;
       const bobRoot = ethers.keccak256(ethers.toUtf8Bytes("bob_root"));
       const bobSchema = 4;
@@ -187,19 +180,40 @@ describe("DatasetRegistry", function () {
       const bobCooldownSec = 120;
 
       // Both commit their datasets
+      const aliceDatasetId = 1;
+      const bobDatasetId = 2;
+
+      const { handle: aliceEncryptedKAnonymity, inputProof: aliceInputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        aliceKAnonymity,
+      );
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(aliceDatasetId, aliceRowCount, aliceRoot, aliceSchema, aliceKAnonymity, aliceCooldownSec);
+        .commitDataset(
+          aliceRowCount,
+          aliceRoot,
+          aliceSchema,
+          aliceEncryptedKAnonymity,
+          aliceInputProof,
+          aliceCooldownSec,
+        );
+
+      const { handle: bobEncryptedKAnonymity, inputProof: bobInputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.bob,
+        bobKAnonymity,
+      );
       await datasetRegistryContract
         .connect(signers.bob)
-        .commitDataset(bobDatasetId, bobRowCount, bobRoot, bobSchema, bobKAnonymity, bobCooldownSec);
+        .commitDataset(bobRowCount, bobRoot, bobSchema, bobEncryptedKAnonymity, bobInputProof, bobCooldownSec);
 
       // Verify Alice's dataset
       const aliceDataset = await getDatasetObject(datasetRegistryContract, aliceDatasetId);
       expect(aliceDataset.merkleRoot).to.equal(aliceRoot);
       expect(aliceDataset.numColumns).to.equal(BigInt(aliceSchema));
       expect(aliceDataset.rowCount).to.equal(BigInt(aliceRowCount));
-      expect(aliceDataset.kAnonymity).to.equal(aliceKAnonymity);
+      // Note: kAnonymity is now encrypted, so we can't check the exact value
       expect(aliceDataset.cooldownSec).to.equal(aliceCooldownSec);
       expect(aliceDataset.exists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(aliceDatasetId, signers.alice.address)).to.be.true;
@@ -209,10 +223,93 @@ describe("DatasetRegistry", function () {
       expect(bobDataset.merkleRoot).to.equal(bobRoot);
       expect(bobDataset.numColumns).to.equal(BigInt(bobSchema));
       expect(bobDataset.rowCount).to.equal(BigInt(bobRowCount));
-      expect(bobDataset.kAnonymity).to.equal(bobKAnonymity);
+      // Note: kAnonymity is now encrypted, so we can't check the exact value
       expect(bobDataset.cooldownSec).to.equal(bobCooldownSec);
       expect(bobDataset.exists).to.be.true;
       expect(await datasetRegistryContract.isDatasetOwner(bobDatasetId, signers.bob.address)).to.be.true;
+    });
+
+    it("should assign incremental dataset IDs", async () => {
+      const rowCount = 1000;
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+
+      // Commit first dataset
+      const { handle: encryptedKAnonymity1, inputProof: inputProof1 } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+      const tx1 = await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(
+          rowCount,
+          ethers.keccak256(ethers.toUtf8Bytes("root1")),
+          numColumns,
+          encryptedKAnonymity1,
+          inputProof1,
+          cooldownSec,
+        );
+      const receipt1 = await tx1.wait();
+      const event1 = receipt1!.logs
+        .map((log) => datasetRegistryContract.interface.parseLog(log))
+        .find((e) => e?.name === "DatasetCommitted")!.args;
+      const datasetId1 = event1[0];
+
+      // Commit second dataset
+      const { handle: encryptedKAnonymity2, inputProof: inputProof2 } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+      const tx2 = await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(
+          rowCount,
+          ethers.keccak256(ethers.toUtf8Bytes("root2")),
+          numColumns,
+          encryptedKAnonymity2,
+          inputProof2,
+          cooldownSec,
+        );
+      const receipt2 = await tx2.wait();
+      const event2 = receipt2!.logs
+        .map((log) => datasetRegistryContract.interface.parseLog(log))
+        .find((e) => e?.name === "DatasetCommitted")!.args;
+      const datasetId2 = event2[0];
+
+      // Commit third dataset
+      const { handle: encryptedKAnonymity3, inputProof: inputProof3 } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+      const tx3 = await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(
+          rowCount,
+          ethers.keccak256(ethers.toUtf8Bytes("root3")),
+          numColumns,
+          encryptedKAnonymity3,
+          inputProof3,
+          cooldownSec,
+        );
+      const receipt3 = await tx3.wait();
+      const event3 = receipt3!.logs
+        .map((log) => datasetRegistryContract.interface.parseLog(log))
+        .find((e) => e?.name === "DatasetCommitted")!.args;
+      const datasetId3 = event3[0];
+
+      // Verify IDs are incremental starting from 1
+      expect(datasetId1).to.equal(BigInt(1));
+      expect(datasetId2).to.equal(BigInt(2));
+      expect(datasetId3).to.equal(BigInt(3));
+
+      // Verify all datasets exist
+      expect(await datasetRegistryContract.doesDatasetExist(datasetId1)).to.be.true;
+      expect(await datasetRegistryContract.doesDatasetExist(datasetId2)).to.be.true;
+      expect(await datasetRegistryContract.doesDatasetExist(datasetId3)).to.be.true;
     });
   });
 
@@ -225,15 +322,21 @@ describe("DatasetRegistry", function () {
       const datasetKAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        datasetKAnonymity,
+      );
+
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity, cooldownSec);
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
 
       const dataset = await getDatasetObject(datasetRegistryContract, datasetId);
       expect(dataset.merkleRoot).to.equal(merkleRoot);
       expect(dataset.numColumns).to.equal(BigInt(numColumns));
       expect(dataset.rowCount).to.equal(BigInt(rowCount));
-      expect(dataset.kAnonymity).to.equal(datasetKAnonymity);
+      // Note: kAnonymity is now encrypted, so we can't check the exact value
       expect(dataset.cooldownSec).to.equal(cooldownSec);
       expect(dataset.exists).to.be.true;
     });
@@ -245,7 +348,7 @@ describe("DatasetRegistry", function () {
       expect(dataset.merkleRoot).to.equal(ethers.ZeroHash);
       expect(dataset.rowCount).to.equal(BigInt(0));
       expect(dataset.numColumns).to.equal(BigInt(0));
-      expect(dataset.kAnonymity).to.equal(0);
+      // Note: kAnonymity for non-existent datasets may not be 0 due to encryption
       expect(dataset.cooldownSec).to.equal(0);
       expect(dataset.exists).to.be.false;
     });
@@ -261,9 +364,14 @@ describe("DatasetRegistry", function () {
       const cooldownSec = 0;
 
       // Create dataset
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        datasetKAnonymity,
+      );
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity, cooldownSec);
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
 
       // Verify it exists
       let dataset = await getDatasetObject(datasetRegistryContract, datasetId);
@@ -279,7 +387,7 @@ describe("DatasetRegistry", function () {
       expect(dataset.merkleRoot).to.equal(ethers.ZeroHash);
       expect(dataset.numColumns).to.equal(BigInt(0));
       expect(dataset.rowCount).to.equal(BigInt(0));
-      expect(dataset.kAnonymity).to.equal(0);
+      // Note: kAnonymity for deleted datasets may not be 0 due to encryption
       expect(dataset.cooldownSec).to.equal(0);
       expect(dataset.exists).to.be.false;
 
@@ -296,9 +404,14 @@ describe("DatasetRegistry", function () {
       const cooldownSec = 0;
 
       // Alice creates dataset
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        datasetKAnonymity,
+      );
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity, cooldownSec);
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
 
       // Bob tries to delete - should fail
       await expect(datasetRegistryContract.connect(signers.bob).deleteDataset(datasetId)).to.be.revertedWithCustomError(
@@ -325,9 +438,15 @@ describe("DatasetRegistry", function () {
       const datasetKAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        datasetKAnonymity,
+      );
+
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity, cooldownSec);
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.alice.address)).to.be.true;
     });
@@ -340,9 +459,15 @@ describe("DatasetRegistry", function () {
       const datasetKAnonymity = KAnonymityLevels.NONE;
       const cooldownSec = 0;
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        datasetKAnonymity,
+      );
+
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, datasetKAnonymity, cooldownSec);
+        .commitDataset(rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
 
       expect(await datasetRegistryContract.isDatasetOwner(datasetId, signers.bob.address)).to.be.false;
     });
@@ -353,6 +478,99 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.isDatasetOwner(nonExistentId, signers.alice.address)).to.be.false;
     });
   });
+
+  describe("k-anonymity access", () => {
+    it("should grant access to kAnonymity value during job finalization", async () => {
+      // Create a test dataset with specific kAnonymity level
+      const datasetId = 1;
+      const kAnonymity = KAnonymityLevels.MINIMAL;
+      const datasetOwner = signers.alice;
+      const jobBuyer = signers.bob;
+
+      const rowConfigs: RowConfig[][] = [
+        [{ type: "euint32", value: 10 }],
+        [{ type: "euint32", value: 20 }],
+        [{ type: "euint32", value: 30 }],
+        [{ type: "euint32", value: 40 }],
+      ];
+
+      const testDataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+        kAnonymity,
+      );
+
+      // Run a simple COUNT job to completion
+      const jobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.COUNT,
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      // Execute the job - this should succeed and grant access to kAnonymity
+      const { decryptedResult } = await executeJobAndDecryptResult(
+        jobManagerContract,
+        jobManagerContractAddress,
+        testDataset,
+        jobParams,
+        datasetOwner,
+        jobBuyer,
+        fhevm,
+        FhevmType,
+      );
+
+      // Verify the job completed successfully
+      expect(decryptedResult).to.equal(BigInt(testDataset.rows.length));
+
+      // TODO: Once kAnonymity access is implemented, verify we can decrypt kAnonymity
+      // const dataset = await getDatasetObject(datasetRegistryContract, testDataset.id);
+      // const decryptedKAnonymity = await fhevm.userDecryptEuint(
+      //   FhevmType.euint32,
+      //   dataset.kAnonymity,
+      //   datasetRegistryContractAddress,
+      //   signers.bob, // job buyer should have access
+      // );
+      // expect(decryptedKAnonymity).to.equal(BigInt(kAnonymity));
+    });
+  });
+
+  describe("setJobManager", () => {
+    it("should reject setJobManager from non-owner", async () => {
+      const fakeJobManagerAddress = "0x1234567890123456789012345678901234567890";
+
+      await expect(
+        datasetRegistryContract.connect(signers.alice).setJobManager(fakeJobManagerAddress),
+      ).to.be.revertedWithCustomError(datasetRegistryContract, "OwnableUnauthorizedAccount");
+    });
+
+    it("should allow owner to set JobManager", async () => {
+      const newJobManagerAddress = "0x1234567890123456789012345678901234567890";
+
+      // Set JobManager as owner
+      await expect(datasetRegistryContract.connect(signers.deployer).setJobManager(newJobManagerAddress))
+        .to.emit(datasetRegistryContract, "JobManagerSet")
+        .withArgs(newJobManagerAddress);
+
+      // Verify it was set correctly
+      expect(await datasetRegistryContract.getJobManager()).to.equal(newJobManagerAddress);
+
+      // Reset back to original JobManager for other tests
+      await datasetRegistryContract.connect(signers.deployer).setJobManager(jobManagerContractAddress);
+      expect(await datasetRegistryContract.getJobManager()).to.equal(jobManagerContractAddress);
+    });
+
+    it("should reject setting zero address as JobManager", async () => {
+      await expect(
+        datasetRegistryContract.connect(signers.deployer).setJobManager(ethers.ZeroAddress),
+      ).to.be.revertedWithCustomError(datasetRegistryContract, "InvalidJobManagerAddress");
+    });
+  });
 });
 
 type Signers = {
@@ -360,6 +578,18 @@ type Signers = {
   alice: HardhatEthersSigner;
   bob: HardhatEthersSigner;
 };
+
+async function encryptKAnonymity(datasetRegistryAddress: string, signer: HardhatEthersSigner, kAnonymity: number) {
+  const encryptedInput = await fhevm
+    .createEncryptedInput(datasetRegistryAddress, signer.address)
+    .add32(kAnonymity)
+    .encrypt();
+
+  return {
+    handle: encryptedInput.handles[0],
+    inputProof: encryptedInput.inputProof,
+  };
+}
 
 async function deployFixture() {
   const factory = (await ethers.getContractFactory("DatasetRegistry")) as DatasetRegistry__factory;

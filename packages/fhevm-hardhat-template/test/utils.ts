@@ -1,7 +1,7 @@
 import { DatasetRegistry, DatasetRegistry__factory } from "../types";
 import { JobManager, JobManager__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
-import { ethers } from "hardhat";
+import { ethers, fhevm } from "hardhat";
 import { createPackedEncryptedTable } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
@@ -195,7 +195,19 @@ async function commitDatasetWithCooldown(
   testData: { rows: string[]; root: string; proofs: string[][]; numColumns: number },
   cooldownSec: number,
 ): Promise<TestDataset> {
+  return commitDatasetWithKAnonymity(datasetRegistry, owner, datasetId, testData, KAnonymityLevels.NONE, cooldownSec);
+}
+
+async function commitDatasetWithKAnonymity(
+  datasetRegistry: DatasetRegistry,
+  owner: HardhatEthersSigner,
+  datasetId: number,
+  testData: { rows: string[]; root: string; proofs: string[][]; numColumns: number },
+  kAnonymity: number,
+  cooldownSec: number = 0,
+): Promise<TestDataset> {
   const dataset = createDefaultDatasetParams(datasetId);
+  const datasetRegistryAddress = await datasetRegistry.getAddress();
 
   // Populate dataset with generated test data
   dataset.rows = testData.rows;
@@ -204,11 +216,22 @@ async function commitDatasetWithCooldown(
   dataset.numColumns = testData.numColumns;
   dataset.rowCount = testData.rows.length;
 
-  const kAnonymity = KAnonymityLevels.NONE;
+  // Encrypt the k-anonymity value for the JobManager contract
+  const encryptedKAnonymity = await fhevm
+    .createEncryptedInput(datasetRegistryAddress, owner.address)
+    .add32(kAnonymity)
+    .encrypt();
 
   await datasetRegistry
     .connect(owner)
-    .commitDataset(dataset.id, dataset.rowCount, dataset.merkleRoot, dataset.numColumns, kAnonymity, cooldownSec);
+    .commitDataset(
+      dataset.rowCount,
+      dataset.merkleRoot,
+      dataset.numColumns,
+      encryptedKAnonymity.handles[0],
+      encryptedKAnonymity.inputProof,
+      cooldownSec,
+    );
 
   return dataset;
 }
@@ -245,9 +268,10 @@ export async function createAndRegisterDataset(
   datasetOwner: HardhatEthersSigner,
   rowConfigs: RowConfig[][],
   datasetId: number,
+  kAnonymity: number = KAnonymityLevels.NONE,
 ): Promise<TestDataset> {
   const testData = await generateTestDatasetWithCustomConfig(jobManagerAddress, datasetOwner, rowConfigs, datasetId);
-  return commitDataset(datasetRegistryContract, datasetOwner, datasetId, testData);
+  return commitDatasetWithKAnonymity(datasetRegistryContract, datasetOwner, datasetId, testData, kAnonymity);
 }
 
 export const OpCodes = {
