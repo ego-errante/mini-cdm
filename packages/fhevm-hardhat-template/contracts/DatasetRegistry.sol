@@ -14,7 +14,6 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
     constructor() Ownable(msg.sender) {}
 
     // ---- state ----
-    uint256 private _nextDatasetId = 1;
     mapping(uint256 => Dataset) private _datasets;
     address private _jobManager;
 
@@ -84,13 +83,14 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
 
     // ---- lifecycle ----
     function commitDataset(
+        uint256 datasetId,
         uint256 rowCount,
         bytes32 merkleRoot,
         uint256 numColumns,
         externalEuint32 kAnonymity,
         bytes calldata inputProof,
         uint32 cooldownSec
-    ) external returns (uint256 datasetId) {
+    ) external {
         // Ensure JobManager is set before allowing dataset commits
         if (_jobManager == address(0)) {
             revert JobManagerNotSet();
@@ -107,13 +107,10 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
             revert InvalidNumColumns();
         }
 
-        // Generate new dataset ID
-        datasetId = _nextDatasetId++;
-
-        // Ensure dataset doesn't already exist (should never happen with auto-increment)
+        // Ensure dataset doesn't already exist
         Dataset storage dataset = _datasets[datasetId];
         if (dataset.exists) {
-            revert DatasetNotFound(); // This should never happen, but just in case
+            revert DatasetAlreadyExists();
         }
 
         // Create new dataset with caller as owner

@@ -11,6 +11,7 @@ import {
   setupTestDataset,
   TestDataset,
   KAnonymityLevels,
+  encryptKAnonymity,
 } from "./utils";
 
 describe("Merkle Integration", function () {
@@ -29,6 +30,8 @@ describe("Merkle Integration", function () {
   beforeEach(async () => {
     ({ datasetRegistryContract, datasetRegistryContractAddress } = await deployDatasetRegistryFixture());
     ({ jobManagerContract, jobManagerContractAddress } = await deployJobManagerFixture(datasetRegistryContractAddress));
+
+    await datasetRegistryContract.connect(signers.deployer).setJobManager(jobManagerContractAddress);
 
     testDataset = await setupTestDataset(datasetRegistryContract, jobManagerContractAddress, signers.alice);
   });
@@ -77,13 +80,27 @@ describe("Merkle Integration", function () {
     it("should reject proof for wrong dataset", async () => {
       const jobParams = createDefaultJobParams();
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        KAnonymityLevels.NONE,
+      );
+
       // Create different dataset
       const wrongDatasetId = 999;
       const wrongRowCount = 1;
       const wrongRoot = ethers.keccak256(ethers.toUtf8Bytes("wrong_root"));
       await datasetRegistryContract
         .connect(signers.alice)
-        .commitDataset(wrongDatasetId, wrongRowCount, wrongRoot, testDataset.numColumns, KAnonymityLevels.NONE, 0);
+        .commitDataset(
+          wrongDatasetId,
+          wrongRowCount,
+          wrongRoot,
+          testDataset.numColumns,
+          encryptedKAnonymity,
+          inputProof,
+          0,
+        );
 
       // Open job on different dataset
       await jobManagerContract.connect(signers.alice).openJob(wrongDatasetId, signers.bob.address, jobParams);

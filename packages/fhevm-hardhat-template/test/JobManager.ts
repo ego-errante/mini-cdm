@@ -19,6 +19,7 @@ import {
   createAndRegisterDataset,
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
+  encryptKAnonymity,
 } from "./utils";
 import {
   compileFilterDSL,
@@ -59,6 +60,9 @@ describe("JobManager", function () {
     ({ datasetRegistryContract, datasetRegistryContractAddress } = await deployDatasetRegistryFixture());
     ({ jobManagerContract, jobManagerContractAddress: jobManagerContractAddress } =
       await deployJobManagerFixture(datasetRegistryContractAddress));
+
+    // Set the JobManager address on the DatasetRegistry so commitDataset can work
+    await datasetRegistryContract.connect(signers.deployer).setJobManager(jobManagerContractAddress);
 
     testDatasetOwner = signers.alice;
 
@@ -375,18 +379,23 @@ describe("JobManager", function () {
         1, // 1 column
       );
 
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        KAnonymityLevels.NONE,
+      );
+
       // Register the dataset with an incorrect schema hash (claiming it has 2 columns instead of 1)
       const wrongSchemaHash = ethers.keccak256(ethers.solidityPacked(["uint256"], [2])); // Schema for 2 columns
-      await datasetRegistryContract
-        .connect(signers.alice)
-        .commitDataset(
-          2,
-          correctRowDataset.rows.length,
-          correctRowDataset.root,
-          wrongSchemaHash,
-          KAnonymityLevels.NONE,
-          0,
-        );
+      await datasetRegistryContract.connect(signers.alice).commitDataset(
+        2, // dataset ID
+        correctRowDataset.rows.length,
+        correctRowDataset.root,
+        wrongSchemaHash,
+        encryptedKAnonymity,
+        inputProof,
+        0,
+      );
 
       const jobParams = createDefaultJobParams();
 
@@ -1704,7 +1713,7 @@ describe("JobManager", function () {
       }
     });
 
-    it("should return 0 when k-anonymity is not met across all operations", async () => {
+    it("should return sentinel value when k-anonymity is not met across all operations", async () => {
       const filterNotMet = gt(0, 40); // field[0] > 40, keeps 1 row (< k)
       const compiledFilterNotMet = compileFilterDSL(filterNotMet);
 
@@ -1736,7 +1745,9 @@ describe("JobManager", function () {
           FhevmType,
         );
 
-        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(0n);
+        // When k-anonymity is not met, contract returns uint64.max as sentinel value
+        const uint64Max = BigInt(2) ** BigInt(64) - BigInt(1);
+        expect(decryptedResult, `Incorrect result for ${opInfo.name}`).to.equal(uint64Max);
       }
     });
   });

@@ -29,7 +29,7 @@ interface IDatasetRegistry {
     function getJobManager() external view returns (address);
 
     // ---- lifecycle ----
-    function commitDataset(uint256 rowCount, bytes32 merkleRoot, uint256 numColumns, externalEuint32 kAnonymity, bytes calldata inputProof, uint32 cooldownSec) external returns (uint256 datasetId);
+    function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns, externalEuint32 kAnonymity, bytes calldata inputProof, uint32 cooldownSec) external;
 
     function deleteDataset(uint256 datasetId) external;
 
@@ -50,6 +50,7 @@ interface IDatasetRegistry {
 
     // ---- errors ----
     error DatasetNotFound();
+    error DatasetAlreadyExists();
     error NotDatasetOwner();
     error InvalidMerkleRoot();
     error InvalidNumColumns();

@@ -225,6 +225,7 @@ async function commitDatasetWithKAnonymity(
   await datasetRegistry
     .connect(owner)
     .commitDataset(
+      datasetId,
       dataset.rowCount,
       dataset.merkleRoot,
       dataset.numColumns,
@@ -413,4 +414,20 @@ export function parseJobFinalizedEvent(jobManagerContract: JobManager, receipt: 
 
   return receipt.logs.map((log) => jobManagerContract.interface.parseLog(log)).find((e) => e?.name === "JobFinalized")!
     .args;
+}
+
+export async function encryptKAnonymity(
+  datasetRegistryAddress: string,
+  signer: HardhatEthersSigner,
+  kAnonymity: number,
+) {
+  const encryptedInput = await fhevm
+    .createEncryptedInput(datasetRegistryAddress, signer.address)
+    .add32(kAnonymity)
+    .encrypt();
+
+  return {
+    handle: encryptedInput.handles[0],
+    inputProof: encryptedInput.inputProof,
+  };
 }
