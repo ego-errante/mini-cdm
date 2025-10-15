@@ -2,7 +2,7 @@ import { DatasetRegistry, DatasetRegistry__factory } from "../types";
 import { JobManager, JobManager__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
-import { createPackedEncryptedTable } from "./RowDecoder";
+import { createPackedEncryptedTable, createPackedEncryptedRow } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
 export interface TestDataset {
@@ -168,6 +168,36 @@ export async function generateTestDatasetWithCustomConfig(
   };
 }
 
+/**
+ * Per-row encryption version - encrypts each row independently to avoid 2048-bit limit
+ * Use this for datasets with many columns or rows
+ */
+export async function generateTestDatasetWithCustomConfigPerRow(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  rowConfigs: RowConfig[][],
+  datasetId: number = 1,
+) {
+  const numColumns = rowConfigs[0].length;
+  const rows: string[] = [];
+
+  // Encrypt each row independently
+  for (const rowConfig of rowConfigs) {
+    const encryptedRow = await createPackedEncryptedRow(contractAddress, signer, rowConfig);
+    rows.push(encryptedRow);
+  }
+
+  // Generate merkle tree from encrypted rows
+  const merkleData = await generateMerkleTreeFromRows(rows, datasetId);
+
+  return {
+    rows,
+    root: merkleData.root,
+    proofs: merkleData.proofs,
+    numColumns,
+  };
+}
+
 export function createDefaultDatasetParams(id: number = 1): TestDataset {
   return {
     id,
@@ -275,6 +305,26 @@ export async function createAndRegisterDataset(
   return commitDatasetWithKAnonymity(datasetRegistryContract, datasetOwner, datasetId, testData, kAnonymity);
 }
 
+/**
+ * Per-row encryption version - use for datasets with many columns
+ */
+export async function createAndRegisterDatasetPerRow(
+  datasetRegistryContract: DatasetRegistry,
+  jobManagerAddress: string,
+  datasetOwner: HardhatEthersSigner,
+  rowConfigs: RowConfig[][],
+  datasetId: number,
+  kAnonymity: number = KAnonymityLevels.NONE,
+): Promise<TestDataset> {
+  const testData = await generateTestDatasetWithCustomConfigPerRow(
+    jobManagerAddress,
+    datasetOwner,
+    rowConfigs,
+    datasetId,
+  );
+  return commitDatasetWithKAnonymity(datasetRegistryContract, datasetOwner, datasetId, testData, kAnonymity);
+}
+
 export const OpCodes = {
   WEIGHTED_SUM: 0,
   SUM: 1,
@@ -296,7 +346,7 @@ export function createDefaultJobParams() {
   return {
     op: OpCodes.SUM,
     targetField: 0,
-    weights: [],
+    weights: [] as number[],
     divisor: 0,
     clampMin: 0,
     clampMax: 0,
