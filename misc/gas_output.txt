@@ -1,0 +1,698 @@
+Generating Block 1: Operation Baseline...
+Generating Block 2: Row Scaling...
+Generating Block 3: Column Scaling...
+Generating Block 4: Edge Cases...
+Generated 60 total test cases
+
+
+  Gas Benchmarking - Factorial Design
+
+========================================
+GAS BENCHMARKING TEST MATRIX
+========================================
+Total test cases: 60
+Factors:
+  - Rows: [5, 25, 100]
+  - Columns: [3, 10, 32]
+  - Operations: [COUNT, SUM, AVG_P, WEIGHTED_SUM, MIN, MAX]
+  - Filter Complexity: [none, simple, medium, complex]
+========================================
+
+
+--- Running Test 1/60: B1-1 ---
+Params: 25 rows × 10 cols, COUNT, none filter
+Results:
+  openJob:       577,782 gas
+  pushRow total: 16,197,981 gas
+  pushRow avg:   647,919 gas
+  finalize:      223,142 gas
+  TOTAL:         16,998,905 gas
+    ✔ [B1-1] Baseline COUNT with none filter (617ms)
+
+--- Running Test 2/60: B1-2 ---
+Params: 25 rows × 10 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 16,399,188 gas
+  pushRow avg:   655,967 gas
+  finalize:      205,638 gas
+  TOTAL:         17,245,040 gas
+    ✔ [B1-2] Baseline COUNT with simple filter (581ms)
+
+--- Running Test 3/60: B1-3 ---
+Params: 25 rows × 10 cols, COUNT, medium filter
+Results:
+  openJob:       662,678 gas
+  pushRow total: 17,094,795 gas
+  pushRow avg:   683,791 gas
+  finalize:      207,791 gas
+  TOTAL:         17,965,264 gas
+    ✔ [B1-3] Baseline COUNT with medium filter (550ms)
+
+--- Running Test 4/60: B1-4 ---
+Params: 25 rows × 10 cols, COUNT, complex filter
+Results:
+  openJob:       729,829 gas
+  pushRow total: 18,783,454 gas
+  pushRow avg:   751,338 gas
+  finalize:      214,157 gas
+  TOTAL:         19,727,440 gas
+    ✔ [B1-4] Baseline COUNT with complex filter (611ms)
+
+--- Running Test 5/60: B1-5 ---
+Params: 25 rows × 10 cols, SUM, none filter
+Results:
+  openJob:       577,425 gas
+  pushRow total: 19,284,371 gas
+  pushRow avg:   771,374 gas
+  finalize:      215,068 gas
+  TOTAL:         20,076,864 gas
+    ✔ [B1-5] Baseline SUM with none filter (566ms)
+
+--- Running Test 6/60: B1-6 ---
+Params: 25 rows × 10 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 19,485,735 gas
+  pushRow avg:   779,429 gas
+  finalize:      217,464 gas
+  TOTAL:         20,343,056 gas
+    ✔ [B1-6] Baseline SUM with simple filter (592ms)
+
+--- Running Test 7/60: B1-7 ---
+Params: 25 rows × 10 cols, SUM, medium filter
+Results:
+  openJob:       662,321 gas
+  pushRow total: 20,181,197 gas
+  pushRow avg:   807,247 gas
+  finalize:      219,617 gas
+  TOTAL:         21,063,135 gas
+    ✔ [B1-7] Baseline SUM with medium filter (598ms)
+
+--- Running Test 8/60: B1-8 ---
+Params: 25 rows × 10 cols, SUM, complex filter
+Results:
+  openJob:       729,472 gas
+  pushRow total: 21,870,757 gas
+  pushRow avg:   874,830 gas
+  finalize:      225,983 gas
+  TOTAL:         22,826,212 gas
+    ✔ [B1-8] Baseline SUM with complex filter (656ms)
+
+--- Running Test 9/60: B1-9 ---
+Params: 25 rows × 10 cols, AVG_P, none filter
+Results:
+  openJob:       597,680 gas
+  pushRow total: 19,285,911 gas
+  pushRow avg:   771,436 gas
+  finalize:      225,174 gas
+  TOTAL:         20,108,765 gas
+    ✔ [B1-9] Baseline AVG_P with none filter (588ms)
+
+--- Running Test 10/60: B1-10 ---
+Params: 25 rows × 10 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 19,486,855 gas
+  pushRow avg:   779,474 gas
+  finalize:      227,570 gas
+  TOTAL:         20,374,537 gas
+    ✔ [B1-10] Baseline AVG_P with simple filter (600ms)
+
+--- Running Test 11/60: B1-11 ---
+Params: 25 rows × 10 cols, AVG_P, medium filter
+Results:
+  openJob:       682,576 gas
+  pushRow total: 20,183,001 gas
+  pushRow avg:   807,320 gas
+  finalize:      229,723 gas
+  TOTAL:         21,095,300 gas
+    ✔ [B1-11] Baseline AVG_P with medium filter (763ms)
+
+--- Running Test 12/60: B1-12 ---
+Params: 25 rows × 10 cols, AVG_P, complex filter
+Results:
+  openJob:       749,727 gas
+  pushRow total: 21,870,701 gas
+  pushRow avg:   874,828 gas
+  finalize:      236,089 gas
+  TOTAL:         22,856,517 gas
+    ✔ [B1-12] Baseline AVG_P with complex filter (668ms)
+
+--- Running Test 13/60: B1-13 ---
+Params: 25 rows × 10 cols, WEIGHTED_SUM, none filter
+Results:
+  openJob:       609,021 gas
+  pushRow total: 53,209,198 gas
+  pushRow avg:   2,128,367 gas
+  finalize:      220,132 gas
+  TOTAL:         54,038,351 gas
+    ✔ [B1-13] Baseline WEIGHTED_SUM with none filter (1278ms)
+
+--- Running Test 14/60: B1-14 ---
+Params: 25 rows × 10 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       671,452 gas
+  pushRow total: 53,412,063 gas
+  pushRow avg:   2,136,482 gas
+  finalize:      222,527 gas
+  TOTAL:         54,306,042 gas
+    ✔ [B1-14] Baseline WEIGHTED_SUM with simple filter (1256ms)
+
+--- Running Test 15/60: B1-15 ---
+Params: 25 rows × 10 cols, WEIGHTED_SUM, medium filter
+Results:
+  openJob:       693,916 gas
+  pushRow total: 54,108,043 gas
+  pushRow avg:   2,164,321 gas
+  finalize:      224,680 gas
+  TOTAL:         55,026,639 gas
+    ✔ [B1-15] Baseline WEIGHTED_SUM with medium filter (1384ms)
+
+--- Running Test 16/60: B1-16 ---
+Params: 25 rows × 10 cols, WEIGHTED_SUM, complex filter
+Results:
+  openJob:       761,068 gas
+  pushRow total: 55,795,242 gas
+  pushRow avg:   2,231,809 gas
+  finalize:      231,046 gas
+  TOTAL:         56,787,356 gas
+    ✔ [B1-16] Baseline WEIGHTED_SUM with complex filter (1348ms)
+
+--- Running Test 17/60: B1-17 ---
+Params: 25 rows × 10 cols, MIN, none filter
+Results:
+  openJob:       577,785 gas
+  pushRow total: 19,143,104 gas
+  pushRow avg:   765,724 gas
+  finalize:      195,329 gas
+  TOTAL:         19,916,218 gas
+    ✔ [B1-17] Baseline MIN with none filter (554ms)
+
+--- Running Test 18/60: B1-18 ---
+Params: 25 rows × 10 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 19,346,843 gas
+  pushRow avg:   773,873 gas
+  finalize:      197,725 gas
+  TOTAL:         20,184,785 gas
+    ✔ [B1-18] Baseline MIN with simple filter (603ms)
+
+--- Running Test 19/60: B1-19 ---
+Params: 25 rows × 10 cols, MIN, medium filter
+Results:
+  openJob:       662,681 gas
+  pushRow total: 20,040,938 gas
+  pushRow avg:   801,637 gas
+  finalize:      199,878 gas
+  TOTAL:         20,903,497 gas
+    ✔ [B1-19] Baseline MIN with medium filter (569ms)
+
+--- Running Test 20/60: B1-20 ---
+Params: 25 rows × 10 cols, MIN, complex filter
+Results:
+  openJob:       729,832 gas
+  pushRow total: 21,730,893 gas
+  pushRow avg:   869,235 gas
+  finalize:      206,244 gas
+  TOTAL:         22,666,969 gas
+    ✔ [B1-20] Baseline MIN with complex filter (814ms)
+
+--- Running Test 21/60: B1-21 ---
+Params: 25 rows × 10 cols, MAX, none filter
+Results:
+  openJob:       577,965 gas
+  pushRow total: 19,146,200 gas
+  pushRow avg:   765,848 gas
+  finalize:      195,381 gas
+  TOTAL:         19,919,546 gas
+    ✔ [B1-21] Baseline MAX with none filter (547ms)
+
+--- Running Test 22/60: B1-22 ---
+Params: 25 rows × 10 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 19,346,891 gas
+  pushRow avg:   773,875 gas
+  finalize:      197,777 gas
+  TOTAL:         20,185,065 gas
+    ✔ [B1-22] Baseline MAX with simple filter (546ms)
+
+--- Running Test 23/60: B1-23 ---
+Params: 25 rows × 10 cols, MAX, medium filter
+Results:
+  openJob:       662,861 gas
+  pushRow total: 20,042,570 gas
+  pushRow avg:   801,702 gas
+  finalize:      199,930 gas
+  TOTAL:         20,905,361 gas
+    ✔ [B1-23] Baseline MAX with medium filter (563ms)
+
+--- Running Test 24/60: B1-24 ---
+Params: 25 rows × 10 cols, MAX, complex filter
+Results:
+  openJob:       730,012 gas
+  pushRow total: 21,732,921 gas
+  pushRow avg:   869,316 gas
+  finalize:      206,296 gas
+  TOTAL:         22,669,229 gas
+    ✔ [B1-24] Baseline MAX with complex filter (641ms)
+
+--- Running Test 25/60: B2-25 ---
+Params: 5 rows × 10 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 3,282,345 gas
+  pushRow avg:   656,469 gas
+  finalize:      205,638 gas
+  TOTAL:         4,128,197 gas
+    ✔ [B2-25] COUNT with LOW rows (5) (101ms)
+
+--- Running Test 26/60: B2-26 ---
+Params: 100 rows × 10 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 65,713,384 gas
+  pushRow avg:   657,133 gas
+  finalize:      205,638 gas
+  TOTAL:         66,559,236 gas
+    ✔ [B2-26] COUNT with HIGH rows (100) (2837ms)
+
+--- Running Test 27/60: B2-27 ---
+Params: 5 rows × 10 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 3,897,312 gas
+  pushRow avg:   779,462 gas
+  finalize:      217,464 gas
+  TOTAL:         4,754,633 gas
+    ✔ [B2-27] SUM with LOW rows (5) (109ms)
+
+--- Running Test 28/60: B2-28 ---
+Params: 100 rows × 10 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 78,070,408 gas
+  pushRow avg:   780,704 gas
+  finalize:      217,464 gas
+  TOTAL:         78,927,729 gas
+    ✔ [B2-28] SUM with HIGH rows (100) (3003ms)
+
+--- Running Test 29/60: B2-29 ---
+Params: 5 rows × 10 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 3,897,632 gas
+  pushRow avg:   779,526 gas
+  finalize:      227,570 gas
+  TOTAL:         4,785,314 gas
+    ✔ [B2-29] AVG_P with LOW rows (5) (119ms)
+
+--- Running Test 30/60: B2-30 ---
+Params: 100 rows × 10 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 78,070,652 gas
+  pushRow avg:   780,706 gas
+  finalize:      227,570 gas
+  TOTAL:         78,958,334 gas
+    ✔ [B2-30] AVG_P with HIGH rows (100) (2957ms)
+
+--- Running Test 31/60: B2-31 ---
+Params: 5 rows × 10 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       671,452 gas
+  pushRow total: 10,680,803 gas
+  pushRow avg:   2,136,160 gas
+  finalize:      222,527 gas
+  TOTAL:         11,574,782 gas
+    ✔ [B2-31] WEIGHTED_SUM with LOW rows (5) (292ms)
+
+--- Running Test 32/60: B2-32 ---
+Params: 100 rows × 10 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       671,452 gas
+  pushRow total: 213,774,818 gas
+  pushRow avg:   2,137,748 gas
+  finalize:      222,527 gas
+  TOTAL:         214,668,797 gas
+    ✔ [B2-32] WEIGHTED_SUM with HIGH rows (100) (6194ms)
+
+--- Running Test 33/60: B2-33 ---
+Params: 5 rows × 10 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 3,870,868 gas
+  pushRow avg:   774,173 gas
+  finalize:      197,725 gas
+  TOTAL:         4,708,810 gas
+    ✔ [B2-33] MIN with LOW rows (5) (121ms)
+
+--- Running Test 34/60: B2-34 ---
+Params: 100 rows × 10 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 77,499,684 gas
+  pushRow avg:   774,996 gas
+  finalize:      197,725 gas
+  TOTAL:         78,337,626 gas
+    ✔ [B2-34] MIN with HIGH rows (100) (2976ms)
+
+--- Running Test 35/60: B2-35 ---
+Params: 5 rows × 10 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 3,871,216 gas
+  pushRow avg:   774,243 gas
+  finalize:      197,777 gas
+  TOTAL:         4,709,390 gas
+    ✔ [B2-35] MAX with LOW rows (5) (113ms)
+
+--- Running Test 36/60: B2-36 ---
+Params: 100 rows × 10 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 77,504,544 gas
+  pushRow avg:   775,045 gas
+  finalize:      197,777 gas
+  TOTAL:         78,342,718 gas
+    ✔ [B2-36] MAX with HIGH rows (100) (2840ms)
+
+--- Running Test 37/60: B3-37 ---
+Params: 25 rows × 3 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 8,153,210 gas
+  pushRow avg:   326,128 gas
+  finalize:      205,638 gas
+  TOTAL:         8,999,062 gas
+    ✔ [B3-37] COUNT with LOW columns (3) (317ms)
+
+--- Running Test 38/60: B3-38 ---
+Params: 25 rows × 32 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 57,415,944 gas
+  pushRow avg:   2,296,637 gas
+  finalize:      205,638 gas
+  TOTAL:         58,261,796 gas
+    ✔ [B3-38] COUNT with HIGH columns (32) (1358ms)
+
+--- Running Test 39/60: B3-39 ---
+Params: 25 rows × 3 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 11,239,883 gas
+  pushRow avg:   449,595 gas
+  finalize:      217,464 gas
+  TOTAL:         12,097,204 gas
+    ✔ [B3-39] SUM with LOW columns (3) (333ms)
+
+--- Running Test 40/60: B3-40 ---
+Params: 25 rows × 32 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 60,504,151 gas
+  pushRow avg:   2,420,166 gas
+  finalize:      217,464 gas
+  TOTAL:         61,361,472 gas
+    ✔ [B3-40] SUM with HIGH columns (32) (1500ms)
+
+--- Running Test 41/60: B3-41 ---
+Params: 25 rows × 3 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 11,241,195 gas
+  pushRow avg:   449,647 gas
+  finalize:      227,570 gas
+  TOTAL:         12,128,877 gas
+    ✔ [B3-41] AVG_P with LOW columns (3) (408ms)
+
+--- Running Test 42/60: B3-42 ---
+Params: 25 rows × 32 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 60,505,931 gas
+  pushRow avg:   2,420,237 gas
+  finalize:      227,570 gas
+  TOTAL:         61,393,613 gas
+    ✔ [B3-42] AVG_P with HIGH columns (32) (1424ms)
+
+--- Running Test 43/60: B3-43 ---
+Params: 25 rows × 3 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       669,210 gas
+  pushRow total: 22,297,425 gas
+  pushRow avg:   891,897 gas
+  finalize:      220,475 gas
+  TOTAL:         23,187,110 gas
+    ✔ [B3-43] WEIGHTED_SUM with LOW columns (3) (604ms)
+
+--- Running Test 44/60: B3-44 ---
+Params: 25 rows × 10 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       671,452 gas
+  pushRow total: 53,411,523 gas
+  pushRow avg:   2,136,460 gas
+  finalize:      222,527 gas
+  TOTAL:         54,305,502 gas
+    ✔ [B3-44] WEIGHTED_SUM with HIGH columns (32) (1394ms)
+
+--- Running Test 45/60: B3-45 ---
+Params: 25 rows × 3 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 11,099,277 gas
+  pushRow avg:   443,971 gas
+  finalize:      197,725 gas
+  TOTAL:         11,937,219 gas
+    ✔ [B3-45] MIN with LOW columns (3) (360ms)
+
+--- Running Test 46/60: B3-46 ---
+Params: 25 rows × 32 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 60,364,195 gas
+  pushRow avg:   2,414,567 gas
+  finalize:      197,725 gas
+  TOTAL:         61,202,137 gas
+    ✔ [B3-46] MIN with HIGH columns (32) (1410ms)
+
+--- Running Test 47/60: B3-47 ---
+Params: 25 rows × 3 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 11,101,497 gas
+  pushRow avg:   444,059 gas
+  finalize:      197,777 gas
+  TOTAL:         11,939,671 gas
+    ✔ [B3-47] MAX with LOW columns (3) (348ms)
+
+--- Running Test 48/60: B3-48 ---
+Params: 25 rows × 32 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 60,368,983 gas
+  pushRow avg:   2,414,759 gas
+  finalize:      197,777 gas
+  TOTAL:         61,207,157 gas
+    ✔ [B3-48] MAX with HIGH columns (32) (1639ms)
+
+--- Running Test 49/60: B4-49 ---
+Params: 5 rows × 3 cols, COUNT, simple filter
+Results:
+  openJob:       640,214 gas
+  pushRow total: 1,632,749 gas
+  pushRow avg:   326,549 gas
+  finalize:      205,638 gas
+  TOTAL:         2,478,601 gas
+    ✔ [B4-49] COUNT with LOW rows + LOW columns (94ms)
+
+--- Running Test 50/60: B4-50 ---
+Params: 5 rows × 3 cols, SUM, simple filter
+Results:
+  openJob:       639,857 gas
+  pushRow total: 2,248,070 gas
+  pushRow avg:   449,614 gas
+  finalize:      217,464 gas
+  TOTAL:         3,105,391 gas
+    ✔ [B4-50] SUM with LOW rows + LOW columns (102ms)
+
+--- Running Test 51/60: B4-51 ---
+Params: 5 rows × 3 cols, AVG_P, simple filter
+Results:
+  openJob:       660,112 gas
+  pushRow total: 2,248,198 gas
+  pushRow avg:   449,639 gas
+  finalize:      227,570 gas
+  TOTAL:         3,135,880 gas
+    ✔ [B4-51] AVG_P with LOW rows + LOW columns (79ms)
+
+--- Running Test 52/60: B4-52 ---
+Params: 5 rows × 3 cols, WEIGHTED_SUM, simple filter
+Results:
+  openJob:       669,210 gas
+  pushRow total: 4,457,840 gas
+  pushRow avg:   891,568 gas
+  finalize:      220,475 gas
+  TOTAL:         5,347,525 gas
+    ✔ [B4-52] WEIGHTED_SUM with LOW rows + LOW columns (127ms)
+
+--- Running Test 53/60: B4-53 ---
+Params: 5 rows × 3 cols, MIN, simple filter
+Results:
+  openJob:       640,217 gas
+  pushRow total: 2,221,972 gas
+  pushRow avg:   444,394 gas
+  finalize:      197,725 gas
+  TOTAL:         3,059,914 gas
+    ✔ [B4-53] MIN with LOW rows + LOW columns (63ms)
+
+--- Running Test 54/60: B4-54 ---
+Params: 5 rows × 3 cols, MAX, simple filter
+Results:
+  openJob:       640,397 gas
+  pushRow total: 2,222,308 gas
+  pushRow avg:   444,461 gas
+  finalize:      197,777 gas
+  TOTAL:         3,060,482 gas
+    ✔ [B4-54] MAX with LOW rows + LOW columns (63ms)
+
+--- Running Test 55/60: B4-55 ---
+Params: 100 rows × 10 cols, WEIGHTED_SUM, none filter
+Results:
+  openJob:       609,021 gas
+  pushRow total: 212,965,346 gas
+  pushRow avg:   2,129,653 gas
+  finalize:      220,132 gas
+  TOTAL:         213,794,499 gas
+    ✔ [B4-55] WEIGHTED_SUM with HIGH rows + HIGH columns (6306ms)
+
+--- Running Test 56/60: B4-56 ---
+Params: 100 rows × 10 cols, WEIGHTED_SUM, complex filter
+Results:
+  openJob:       761,068 gas
+  pushRow total: 223,310,678 gas
+  pushRow avg:   2,233,106 gas
+  finalize:      231,046 gas
+  TOTAL:         224,302,792 gas
+    ✔ [B4-56] WEIGHTED_SUM STRESS TEST: HIGH everything (6081ms)
+
+--- Running Test 57/60: B4-57 ---
+Params: 100 rows × 32 cols, SUM, none filter
+Results:
+  openJob:       577,425 gas
+  pushRow total: 241,326,224 gas
+  pushRow avg:   2,413,262 gas
+  finalize:      215,068 gas
+  TOTAL:         242,118,717 gas
+    ✔ [B4-57] SUM with HIGH rows + HIGH columns (6770ms)
+
+--- Running Test 58/60: B4-58 ---
+Params: 100 rows × 32 cols, SUM, complex filter
+Results:
+  openJob:       729,472 gas
+  pushRow total: 251,679,632 gas
+  pushRow avg:   2,516,796 gas
+  finalize:      225,983 gas
+  TOTAL:         252,635,087 gas
+    ✔ [B4-58] SUM STRESS TEST: HIGH everything (6610ms)
+
+--- Running Test 59/60: B4-59 ---
+Params: 100 rows × 32 cols, AVG_P, none filter
+Results:
+  openJob:       597,680 gas
+  pushRow total: 241,347,720 gas
+  pushRow avg:   2,413,477 gas
+  finalize:      225,174 gas
+  TOTAL:         242,170,574 gas
+    ✔ [B4-59] AVG_P with HIGH rows + HIGH columns (6735ms)
+
+--- Running Test 60/60: B4-60 ---
+Params: 100 rows × 32 cols, AVG_P, complex filter
+Results:
+  openJob:       749,727 gas
+  pushRow total: 251,705,376 gas
+  pushRow avg:   2,517,053 gas
+  finalize:      236,089 gas
+  TOTAL:         252,691,192 gas
+    ✔ [B4-60] AVG_P STRESS TEST: HIGH everything (6668ms)
+
+========================================
+GAS BENCHMARKING COMPLETE
+========================================
+Total tests run: 60
+
+--- CSV Export (copy/paste to analyze) ---
+
+TestID,Rows,Columns,Operation,FilterComplexity,OpenJobGas,PushRowTotal,PushRowAvg,FinalizeGas,TotalGas
+B1-1,25,10,COUNT,none,577782,16197981,647919,223142,16998905
+B1-2,25,10,COUNT,simple,640214,16399188,655967,205638,17245040
+B1-3,25,10,COUNT,medium,662678,17094795,683791,207791,17965264
+B1-4,25,10,COUNT,complex,729829,18783454,751338,214157,19727440
+B1-5,25,10,SUM,none,577425,19284371,771374,215068,20076864
+B1-6,25,10,SUM,simple,639857,19485735,779429,217464,20343056
+B1-7,25,10,SUM,medium,662321,20181197,807247,219617,21063135
+B1-8,25,10,SUM,complex,729472,21870757,874830,225983,22826212
+B1-9,25,10,AVG_P,none,597680,19285911,771436,225174,20108765
+B1-10,25,10,AVG_P,simple,660112,19486855,779474,227570,20374537
+B1-11,25,10,AVG_P,medium,682576,20183001,807320,229723,21095300
+B1-12,25,10,AVG_P,complex,749727,21870701,874828,236089,22856517
+B1-13,25,10,WEIGHTED_SUM,none,609021,53209198,2128367,220132,54038351
+B1-14,25,10,WEIGHTED_SUM,simple,671452,53412063,2136482,222527,54306042
+B1-15,25,10,WEIGHTED_SUM,medium,693916,54108043,2164321,224680,55026639
+B1-16,25,10,WEIGHTED_SUM,complex,761068,55795242,2231809,231046,56787356
+B1-17,25,10,MIN,none,577785,19143104,765724,195329,19916218
+B1-18,25,10,MIN,simple,640217,19346843,773873,197725,20184785
+B1-19,25,10,MIN,medium,662681,20040938,801637,199878,20903497
+B1-20,25,10,MIN,complex,729832,21730893,869235,206244,22666969
+B1-21,25,10,MAX,none,577965,19146200,765848,195381,19919546
+B1-22,25,10,MAX,simple,640397,19346891,773875,197777,20185065
+B1-23,25,10,MAX,medium,662861,20042570,801702,199930,20905361
+B1-24,25,10,MAX,complex,730012,21732921,869316,206296,22669229
+B2-25,5,10,COUNT,simple,640214,3282345,656469,205638,4128197
+B2-26,100,10,COUNT,simple,640214,65713384,657133,205638,66559236
+B2-27,5,10,SUM,simple,639857,3897312,779462,217464,4754633
+B2-28,100,10,SUM,simple,639857,78070408,780704,217464,78927729
+B2-29,5,10,AVG_P,simple,660112,3897632,779526,227570,4785314
+B2-30,100,10,AVG_P,simple,660112,78070652,780706,227570,78958334
+B2-31,5,10,WEIGHTED_SUM,simple,671452,10680803,2136160,222527,11574782
+B2-32,100,10,WEIGHTED_SUM,simple,671452,213774818,2137748,222527,214668797
+B2-33,5,10,MIN,simple,640217,3870868,774173,197725,4708810
+B2-34,100,10,MIN,simple,640217,77499684,774996,197725,78337626
+B2-35,5,10,MAX,simple,640397,3871216,774243,197777,4709390
+B2-36,100,10,MAX,simple,640397,77504544,775045,197777,78342718
+B3-37,25,3,COUNT,simple,640214,8153210,326128,205638,8999062
+B3-38,25,32,COUNT,simple,640214,57415944,2296637,205638,58261796
+B3-39,25,3,SUM,simple,639857,11239883,449595,217464,12097204
+B3-40,25,32,SUM,simple,639857,60504151,2420166,217464,61361472
+B3-41,25,3,AVG_P,simple,660112,11241195,449647,227570,12128877
+B3-42,25,32,AVG_P,simple,660112,60505931,2420237,227570,61393613
+B3-43,25,3,WEIGHTED_SUM,simple,669210,22297425,891897,220475,23187110
+B3-44,25,10,WEIGHTED_SUM,simple,671452,53411523,2136460,222527,54305502
+B3-45,25,3,MIN,simple,640217,11099277,443971,197725,11937219
+B3-46,25,32,MIN,simple,640217,60364195,2414567,197725,61202137
+B3-47,25,3,MAX,simple,640397,11101497,444059,197777,11939671
+B3-48,25,32,MAX,simple,640397,60368983,2414759,197777,61207157
+B4-49,5,3,COUNT,simple,640214,1632749,326549,205638,2478601
+B4-50,5,3,SUM,simple,639857,2248070,449614,217464,3105391
+B4-51,5,3,AVG_P,simple,660112,2248198,449639,227570,3135880
+B4-52,5,3,WEIGHTED_SUM,simple,669210,4457840,891568,220475,5347525
+B4-53,5,3,MIN,simple,640217,2221972,444394,197725,3059914
+B4-54,5,3,MAX,simple,640397,2222308,444461,197777,3060482
+B4-55,100,10,WEIGHTED_SUM,none,609021,212965346,2129653,220132,213794499
+B4-56,100,10,WEIGHTED_SUM,complex,761068,223310678,2233106,231046,224302792
+B4-57,100,32,SUM,none,577425,241326224,2413262,215068,242118717
+B4-58,100,32,SUM,complex,729472,251679632,2516796,225983,252635087
+B4-59,100,32,AVG_P,none,597680,241347720,2413477,225174,242170574
+B4-60,100,32,AVG_P,complex,749727,251705376,2517053,236089,252691192
+
+========================================
+Copy the CSV output above to analyze in Excel/Python/R
+========================================
+
+
+
+  60 passing (2m)
+

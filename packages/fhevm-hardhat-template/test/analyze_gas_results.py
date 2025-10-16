@@ -62,17 +62,25 @@ def analyze_basic_statistics(df):
     print(f"  Finalize:      {df['FinalizeGas'].mean():,.0f} gas ({df['FinalizeGas'].mean()/df['TotalGas'].mean()*100:.1f}%)")
     print(f"  Total:         {df['TotalGas'].mean():,.0f} gas")
 
-def build_regression_model(df, target='TotalGas'):
+def build_regression_model(df, target='TotalGas', include_interaction=True):
     """Build linear regression model"""
     print(f"\n{'='*60}")
     print(f"Building Regression Model for {target}")
+    if include_interaction:
+        print("(with Rows × Columns interaction)")
     print(f"{'='*60}\n")
     
     # Prepare features
     X = df[['Rows', 'Columns', 'FilterBytes']].copy()
     
+    # Add interaction term (key insight: decoding cost scales with rows × columns)
+    if include_interaction:
+        X['Rows_x_Columns'] = df['Rows'] * df['Columns']
+    
     # Add operation dummy variables (COUNT is reference category)
-    operation_dummies = pd.get_dummies(df['Operation'], prefix='Op', drop_first=True)
+    operation_dummies = pd.get_dummies(df['Operation'], prefix='Op')
+    # Drop COUNT column to make it the explicit reference category
+    operation_dummies = operation_dummies.drop('Op_COUNT', axis=1)
     X = pd.concat([X, operation_dummies], axis=1)
     
     y = df[target]
@@ -92,9 +100,14 @@ def build_regression_model(df, target='TotalGas'):
     print(f"  Target:    R² ≥ 0.60, MAPE ≤ 40%")
     
     if r2 >= 0.60:
-        print(f"  ✓ Model meets 60% accuracy target!")
+        print(f"  ✓ Model meets R² target!")
     else:
-        print(f"  ✗ Model below 60% target - consider interaction terms")
+        print(f"  ✗ Model below R² target")
+    
+    if mape <= 40:
+        print(f"  ✓ Model meets MAPE target!")
+    else:
+        print(f"  ✗ Model above MAPE target - consider more terms")
     
     # Print coefficients
     print(f"\nModel Coefficients:")
@@ -188,9 +201,15 @@ def generate_estimator_code(model, coef_df):
     intercept = model.intercept_
     
     # Find row, column, filter coefficients
-    row_coef = coef_df[coef_df['Feature'] == 'Rows']['Coefficient'].values[0]
-    col_coef = coef_df[coef_df['Feature'] == 'Columns']['Coefficient'].values[0]
-    filter_coef = coef_df[coef_df['Feature'] == 'FilterBytes']['Coefficient'].values[0]
+    row_coef = coef_df[coef_df['Feature'] == 'Rows']['Coefficient'].values[0] if 'Rows' in coef_df['Feature'].values else 0
+    col_coef = coef_df[coef_df['Feature'] == 'Columns']['Coefficient'].values[0] if 'Columns' in coef_df['Feature'].values else 0
+    filter_coef = coef_df[coef_df['Feature'] == 'FilterBytes']['Coefficient'].values[0] if 'FilterBytes' in coef_df['Feature'].values else 0
+    
+    # Check for interaction term
+    interaction_coef = 0
+    has_interaction = 'Rows_x_Columns' in coef_df['Feature'].values
+    if has_interaction:
+        interaction_coef = coef_df[coef_df['Feature'] == 'Rows_x_Columns']['Coefficient'].values[0]
     
     # Extract operation coefficients
     op_coefs = {}
@@ -199,8 +218,63 @@ def generate_estimator_code(model, coef_df):
             op_name = row['Feature'].replace('Op_', '')
             op_coefs[op_name] = row['Coefficient']
     
-    # Generate code
-    code = f"""
+    # Generate code with or without interaction
+    if has_interaction:
+        code = f"""
+/**
+ * Estimates gas cost for a JobManager job based on parameters
+ * 
+ * Model Accuracy: See analysis output for R² and MAPE
+ * Model includes Rows × Columns interaction term for better accuracy
+ * 
+ * @param rows Number of rows in dataset
+ * @param columns Number of columns in dataset
+ * @param operation Operation type
+ * @param filterBytes Approximate filter bytecode length
+ * @returns Estimated total gas cost
+ */
+function estimateJobGas(
+  rows: number,
+  columns: number,
+  operation: 'COUNT' | 'SUM' | 'AVG_P' | 'WEIGHTED_SUM' | 'MIN' | 'MAX',
+  filterBytes: number
+): number {{
+  // Base cost (intercept)
+  let gas = {intercept:.0f};
+  
+  // Add per-row cost
+  gas += rows * {row_coef:.0f};
+  
+  // Add per-column cost
+  gas += columns * {col_coef:.0f};
+  
+  // Add row × column interaction (decoding cost scales with both)
+  gas += (rows * columns) * {interaction_coef:.0f};
+  
+  // Add filter complexity cost
+  gas += filterBytes * {filter_coef:.0f};
+  
+  // Add operation-specific costs (relative to COUNT baseline)
+  const operationCosts = {{
+    'COUNT': 0,  // baseline
+    'SUM': {op_coefs.get('SUM', 0):.0f},
+    'AVG_P': {op_coefs.get('AVG_P', 0):.0f},
+    'WEIGHTED_SUM': {op_coefs.get('WEIGHTED_SUM', 0):.0f},
+    'MIN': {op_coefs.get('MIN', 0):.0f},
+    'MAX': {op_coefs.get('MAX', 0):.0f},
+  }};
+  
+  gas += operationCosts[operation];
+  
+  return Math.round(gas);
+}}
+
+// Example usage:
+const estimatedGas = estimateJobGas(50, 15, 'SUM', 7);
+console.log(`Estimated gas: ${{estimatedGas.toLocaleString()}}`);
+"""
+    else:
+        code = f"""
 /**
  * Estimates gas cost for a JobManager job based on parameters
  * 
