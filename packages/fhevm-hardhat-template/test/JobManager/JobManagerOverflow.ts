@@ -1,5 +1,5 @@
-import { JobManager } from "../types";
-import { DatasetRegistry } from "../types";
+import { JobManager } from "../../types";
+import { DatasetRegistry } from "../../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
@@ -14,7 +14,7 @@ import {
   OpCodes,
   RowConfig,
   parseJobFinalizedEvent,
-} from "./utils";
+} from "../utils";
 
 describe("JobManager Overflows", function () {
   let signers: Signers;

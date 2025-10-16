@@ -1,5 +1,5 @@
-import { JobManager } from "../types";
-import { DatasetRegistry } from "../types";
+import { JobManager } from "../../types";
+import { DatasetRegistry } from "../../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
@@ -20,7 +20,7 @@ import {
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
   encryptKAnonymity,
-} from "./utils";
+} from "../utils";
 import {
   compileFilterDSL,
   gt,
@@ -35,7 +35,7 @@ import {
   FilterDSL,
   OpcodeName,
   buildBytecode,
-} from "./filter-dsl";
+} from "../filter-dsl";
 
 describe("JobManager", function () {
   let signers: Signers;

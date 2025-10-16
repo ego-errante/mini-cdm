@@ -1,5 +1,5 @@
-import { DatasetRegistry } from "../types";
-import { JobManager } from "../types";
+import { DatasetRegistry } from "../../types";
+import { JobManager } from "../../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers } from "hardhat";
@@ -12,7 +12,7 @@ import {
   TestDataset,
   KAnonymityLevels,
   encryptKAnonymity,
-} from "./utils";
+} from "../utils";
 
 describe("Merkle Integration", function () {
   let signers: Signers;
