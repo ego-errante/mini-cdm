@@ -179,12 +179,21 @@ describe("Job Transactions", () => {
     await jobManagerContract.connect(seller).acceptRequest(requestId);
 
     // Try to reject an already accepted request - should fail
-    await expect(jobManagerContract.connect(seller).rejectRequest(requestId)).to.be.revertedWith("RequestNotPending");
+    await expect(jobManagerContract.connect(seller).rejectRequest(requestId)).to.be.revertedWithCustomError(
+      jobManagerContract,
+      "RequestNotPending",
+    );
 
     // Try to accept an already accepted request - should fail
-    await expect(jobManagerContract.connect(seller).acceptRequest(requestId)).to.be.revertedWith("RequestNotPending");
+    await expect(jobManagerContract.connect(seller).acceptRequest(requestId)).to.be.revertedWithCustomError(
+      jobManagerContract,
+      "RequestNotPending",
+    );
 
     // Try to cancel an already accepted request - should fail
-    await expect(jobManagerContract.connect(buyer).cancelRequest(requestId)).to.be.revertedWith("RequestNotPending");
+    await expect(jobManagerContract.connect(buyer).cancelRequest(requestId)).to.be.revertedWithCustomError(
+      jobManagerContract,
+      "RequestNotPending",
+    );
   });
 });

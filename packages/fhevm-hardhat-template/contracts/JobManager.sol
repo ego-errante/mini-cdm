@@ -49,7 +49,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     IDatasetRegistry public immutable DATASET_REGISTRY;
 
     // ========================================
-    // STRUCTS
+    // STRUCTS AND ENUMS
     // ========================================
 
     struct Job {
@@ -95,6 +95,13 @@ contract JobManager is IJobManager, SepoliaConfig {
     // Merkle proof verification: track last processed row per job (enforce ascending order)
     mapping(uint256 jobId => uint256 lastRowIndex) private _jobLastProcessedRow;
 
+    // Request management
+    uint256 private _nextRequestId;
+    mapping(uint256 requestId => JobRequest) private _requests;
+    mapping(address buyer => mapping(uint256 datasetId => uint256[])) private _buyerRequests;
+    mapping(uint256 datasetId => uint256[]) private _datasetRequests; // For dataset owner lookup
+    mapping(uint256 jobId => uint256 requestId) private _jobToRequest; // Reverse lookup
+
     // ========================================
     // VIEW FUNCTIONS
     // ========================================
@@ -123,17 +130,25 @@ contract JobManager is IJobManager, SepoliaConfig {
         address buyer,
         JobParams calldata params
     ) external returns (uint256 jobId) {
+        jobId = _createJob(datasetId, buyer, params);
+        emit JobOpened(jobId, datasetId, msg.sender);
+    }
+
+    function _createJob(
+        uint256 datasetId,
+        address buyer,
+        JobParams memory params
+    ) internal returns (uint256 jobId) {
         // Orchestrator function - delegates to smaller helper functions
         _validateDatasetAccess(datasetId);
 
         // Fetch dataset info once for gas optimization
-        (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, , , euint32 kAnonymity, uint32 cooldownSec) = DATASET_REGISTRY.getDataset(datasetId);
+        (bytes32 merkleRoot, uint256 numColumns, uint256 rowCount, , , euint32 kAnonymity, uint32 cooldownSec) =
+            DATASET_REGISTRY.getDataset(datasetId);
 
         _validateJobParameters(params, numColumns);
         _checkCooldownPeriod(buyer, datasetId, cooldownSec);
         jobId = _initializeJobState(datasetId, buyer, params, merkleRoot, rowCount, cooldownSec, kAnonymity);
-
-        emit JobOpened(jobId, datasetId, msg.sender);
     }
 
     /// @notice Validates that dataset exists and caller is owner
@@ -151,7 +166,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     /// @notice Validates all job parameters against dataset constraints
     /// @param params The job parameters to validate
     /// @param numColumns The number of columns in the dataset
-    function _validateJobParameters(JobParams calldata params, uint256 numColumns) internal pure {
+    function _validateJobParameters(JobParams memory params, uint256 numColumns) internal pure {
         // Validate divisor for AVG_P operation
         if (params.op == Op.AVG_P && params.divisor == 0) {
             revert CannotDivideByZero();
@@ -215,7 +230,7 @@ contract JobManager is IJobManager, SepoliaConfig {
     function _initializeJobState(
         uint256 datasetId,
         address buyer,
-        JobParams calldata params,
+        JobParams memory params,
         bytes32 merkleRoot,
         uint256 rowCount,
         uint32 cooldownSec,
@@ -380,7 +395,127 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint256 result = _computeJobResult(job, jobId);
         _finalizeJobState(job, result, isOverflow);
 
+        // NEW: Update associated request if it exists
+        uint256 requestId = _jobToRequest[jobId];
+        if (requestId > 0 || _requests[requestId].jobId == jobId) { // check for safety
+            _requests[requestId].status = RequestStatus.COMPLETED;
+            emit RequestCompleted(requestId, jobId);
+        }
+
         emit JobFinalized(jobId, job.buyer, result, isOverflow);
+    }
+
+    // ========================================
+    // REQUEST LIFECYCLE FUNCTIONS
+    // ========================================
+
+    function submitRequest(uint256 datasetId, JobParams calldata params) external returns (uint256 requestId) {
+        if (!DATASET_REGISTRY.doesDatasetExist(datasetId)) {
+            revert DatasetNotFound();
+        }
+
+        // Validate params early to avoid wasting gas on invalid requests
+        (, uint256 numColumns, , , , , ) = DATASET_REGISTRY.getDataset(datasetId);
+        _validateJobParameters(params, numColumns);
+
+        requestId = _nextRequestId++;
+        _requests[requestId] = JobRequest({
+            datasetId: datasetId,
+            buyer: msg.sender,
+            params: params,
+            status: RequestStatus.PENDING,
+            timestamp: block.timestamp,
+            jobId: 0
+        });
+
+        _buyerRequests[msg.sender][datasetId].push(requestId);
+        _datasetRequests[datasetId].push(requestId);
+        emit RequestSubmitted(requestId, datasetId, msg.sender);
+    }
+
+    function acceptRequest(uint256 requestId) external returns (uint256 jobId) {
+        JobRequest storage request = _requests[requestId];
+
+        if (request.status != RequestStatus.PENDING) {
+            revert RequestNotPending();
+        }
+
+        // Create job using internal logic. _createJob handles ownership check.
+        JobParams memory params = request.params;
+        jobId = _createJob(request.datasetId, request.buyer, params);
+
+        // Update request state
+        request.status = RequestStatus.ACCEPTED;
+        request.jobId = jobId;
+
+        // Create reverse mapping for finalization lookup
+        _jobToRequest[jobId] = requestId;
+
+        emit RequestAccepted(requestId, jobId);
+    }
+
+    function rejectRequest(uint256 requestId) external {
+        JobRequest storage request = _requests[requestId];
+
+        if (request.status != RequestStatus.PENDING) {
+            revert RequestNotPending();
+        }
+
+        if (!_isDatasetOwner(request.datasetId)) {
+            revert NotDatasetOwner();
+        }
+
+        request.status = RequestStatus.REJECTED;
+        emit RequestRejected(requestId);
+    }
+
+    function cancelRequest(uint256 requestId) external {
+        JobRequest storage request = _requests[requestId];
+
+        if (request.status != RequestStatus.PENDING) {
+            revert RequestNotPending();
+        }
+
+        if (request.buyer != msg.sender) {
+            revert NotRequestBuyer();
+        }
+
+        request.status = RequestStatus.REJECTED; // Reuse REJECTED for cancelled
+        emit RequestCancelled(requestId);
+    }
+
+    // ========================================
+    // REQUEST VIEW FUNCTIONS
+    // ========================================
+
+    function getRequest(uint256 requestId) external view returns (JobRequest memory) {
+        return _requests[requestId];
+    }
+
+    function getBuyerRequests(address buyer, uint256 datasetId) external view returns (uint256[] memory) {
+        return _buyerRequests[buyer][datasetId];
+    }
+
+    function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory) {
+        uint256[] memory allRequests = _datasetRequests[datasetId];
+        uint256 pendingCount = 0;
+
+        // Count pending requests
+        for (uint256 i = 0; i < allRequests.length; i++) {
+            if (_requests[allRequests[i]].status == RequestStatus.PENDING) {
+                pendingCount++;
+            }
+        }
+
+        // Build result array
+        uint256[] memory pendingRequestIds = new uint256[](pendingCount);
+        uint256 idx = 0;
+        for (uint256 i = 0; i < allRequests.length; i++) {
+            if (_requests[allRequests[i]].status == RequestStatus.PENDING) {
+                pendingRequestIds[idx++] = allRequests[i];
+            }
+        }
+        return pendingRequestIds;
     }
 
     /// @notice Validates that job can be finalized (open and all rows processed)

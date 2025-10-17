@@ -33,6 +33,23 @@ interface IJobManager {
         FilterProg filter; // boolean tree as bytecode
     }
 
+    // ---- request lifecycle ----
+    enum RequestStatus {
+        PENDING,
+        ACCEPTED,
+        REJECTED,
+        COMPLETED
+    }
+
+    struct JobRequest {
+        uint256 datasetId;
+        address buyer;
+        JobParams params;
+        RequestStatus status;
+        uint256 timestamp;
+        uint256 jobId;
+    }
+
     // ---- views ----
     function nextJobId() external view returns (uint256);
 
@@ -41,6 +58,12 @@ interface IJobManager {
     function jobOpen(uint256 jobId) external view returns (bool);
 
     function jobDataset(uint256 jobId) external view returns (uint256);
+
+    // ---- request views ----
+    function getRequest(uint256 requestId) external view returns (JobRequest memory);
+    function getBuyerRequests(address buyer, uint256 datasetId) external view returns (uint256[] memory);
+    function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory);
+
 
     // ---- lifecycle ----
     function openJob(uint256 datasetId, address buyer, JobParams calldata params) external returns (uint256 jobId);
@@ -59,10 +82,21 @@ interface IJobManager {
 
     function finalize(uint256 jobId) external; // sealed; decryption allowed only if policy passes
 
+    // ---- request lifecycle ----
+    function submitRequest(uint256 datasetId, JobParams calldata params) external returns (uint256 requestId);
+    function acceptRequest(uint256 requestId) external returns (uint256 jobId);
+    function rejectRequest(uint256 requestId) external;
+    function cancelRequest(uint256 requestId) external;
+
     // ---- events ----
     event JobOpened(uint256 indexed jobId, uint256 indexed datasetId, address indexed buyer);
     event RowPushed(uint256 indexed jobId);
     event JobFinalized(uint256 indexed jobId, address indexed buyer, euint256 result, ebool isOverflow);
+    event RequestSubmitted(uint256 indexed requestId, uint256 indexed datasetId, address indexed buyer);
+    event RequestAccepted(uint256 indexed requestId, uint256 indexed jobId);
+    event RequestRejected(uint256 indexed requestId);
+    event RequestCompleted(uint256 indexed requestId, uint256 indexed jobId);
+    event RequestCancelled(uint256 indexed requestId);
 
     // ---- errors ----
     error JobClosed();
@@ -82,6 +116,10 @@ interface IJobManager {
     error InvalidClampRange();
     error FilterBytecodeTooLong();
     error FilterConstsTooLong();
+
+    // ---- request errors ----
+    error RequestNotPending();
+    error NotRequestBuyer();
 
     // Filter VM errors
     error FilterVMUnknownOpcode(uint8 opcode);
