@@ -41,11 +41,10 @@ describe("Merkle Integration", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job
+      const jobId = await jobManagerContract.nextJobId();
       await expect(
         jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams),
       ).to.emit(jobManagerContract, "JobOpened");
-
-      const jobId = 0;
 
       // Push row 0 with valid proof
       const rowIndex = 0;
@@ -61,8 +60,8 @@ describe("Merkle Integration", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Push row with invalid proof (wrong proof elements)
       const rowIndex = 0;
@@ -103,8 +102,8 @@ describe("Merkle Integration", function () {
         );
 
       // Open job on different dataset
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(wrongDatasetId, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Try to push row from original dataset - should fail
       const rowIndex = 0;
@@ -120,8 +119,8 @@ describe("Merkle Integration", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Push row with empty proof
       const rowIndex = 0;
@@ -147,11 +146,10 @@ describe("Merkle Integration", function () {
       );
 
       // Open job on the odd-row dataset
+      const jobId = await jobManagerContract.nextJobId();
       await expect(
         jobManagerContract.connect(signers.alice).openJob(oddRowDataset.id, signers.bob.address, jobParams),
       ).to.emit(jobManagerContract, "JobOpened");
-
-      const jobId = 0; // Second job since we already have jobId 0 from beforeEach
 
       // Push all rows in order (0, 1, 2)
       for (let rowIndex = 0; rowIndex < oddRowDataset.rows.length; rowIndex++) {

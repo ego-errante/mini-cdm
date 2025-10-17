@@ -13,9 +13,10 @@ import {SepoliaConfig} from "@fhevm/solidity/config/ZamaConfig.sol";
 import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
 import {RowDecoder} from "./RowDecoder.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 
-contract JobManager is IJobManager, SepoliaConfig {
+contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard {
     // ========================================
     // CONSTANTS AND OPCODES
     // ========================================
@@ -41,6 +42,9 @@ contract JobManager is IJobManager, SepoliaConfig {
     uint8 constant AND = 0x20;
     uint8 constant OR = 0x21;
     uint8 constant NOT = 0x22;
+
+    // Payment constants
+    uint256 public constant STALL_TIMEOUT = 24 hours;
 
     // ========================================
     // DEPENDENCIES
@@ -81,7 +85,14 @@ contract JobManager is IJobManager, SepoliaConfig {
 
     constructor(address datasetRegistry) {
         DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
+        admin = msg.sender;
+        _nextJobId = 1;
+        _nextRequestId = 1;
     }
+
+    // Payment management
+    uint256 public paymentThreshold = 0.05 ether;
+    address public admin;
 
     uint256 private _nextJobId;
     mapping(uint256 jobId => Job job) private _jobs;
@@ -108,6 +119,10 @@ contract JobManager is IJobManager, SepoliaConfig {
 
     function nextJobId() external view returns (uint256) {
         return _nextJobId;
+    }
+
+    function nextRequestId() external view returns (uint256) {
+        return _nextRequestId;
     }
 
     function jobBuyer(uint256 jobId) external view returns (address) {
@@ -291,6 +306,8 @@ contract JobManager is IJobManager, SepoliaConfig {
         bytes32[] calldata merkleProof,
         uint256 rowIndex
     ) external {
+        uint256 gasBefore = gasleft();
+        
         // Orchestrator function - delegates to smaller helper functions
         // Fetch storage pointer once for gas efficiency
         Job storage job = _jobs[jobId];
@@ -298,6 +315,12 @@ contract JobManager is IJobManager, SepoliaConfig {
         _validateRowProcessing(job, jobId, rowIndex);
         _verifyRowIntegrity(job, jobId, rowPacked, merkleProof, rowIndex);
         _processRowData(job, jobId, rowPacked);
+
+        // Track gas if this job is from a request
+        uint256 requestId = _jobToRequest[jobId];
+        if (_requests[requestId].jobId == jobId) {
+            _trackGasAndMaybePayout(requestId, gasBefore);
+        }
 
         emit RowPushed(jobId);
     }
@@ -383,7 +406,9 @@ contract JobManager is IJobManager, SepoliaConfig {
         _updateAccumulators(jobId, params, fields, keep);
     }
 
-    function finalize(uint256 jobId) external {
+    function finalize(uint256 jobId) external nonReentrant {
+        uint256 gasBefore = gasleft();
+        
         // Orchestrator function - delegates to smaller helper functions
         // Fetch storage pointer once for gas efficiency
         Job storage job = _jobs[jobId];
@@ -395,10 +420,30 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint256 result = _computeJobResult(job, jobId);
         _finalizeJobState(job, result, isOverflow);
 
-        // NEW: Update associated request if it exists
+        // Handle request-based job payment settlement
         uint256 requestId = _jobToRequest[jobId];
-        if (requestId > 0 || _requests[requestId].jobId == jobId) { // check for safety
-            _requests[requestId].status = RequestStatus.COMPLETED;
+        if (_requests[requestId].jobId == jobId) {
+            JobRequest storage request = _requests[requestId];
+            
+            // Track finalize gas
+            _trackGasAndMaybePayout(requestId, gasBefore);
+            
+            // Pay out any remaining debt
+            if (request.gasDebtToSeller > 0) {
+                _payoutSeller(requestId);
+            }
+            
+            // Refund remaining allowance to buyer
+            if (request.computeAllowance > 0) {
+                uint256 refund = request.computeAllowance;
+                request.computeAllowance = 0;
+                (bool success, ) = payable(request.buyer).call{value: refund}("");
+                if (!success) {
+                    revert PaymentFailed();
+                }
+            }
+            
+            request.status = RequestStatus.COMPLETED;
             emit RequestCompleted(requestId, jobId);
         }
 
@@ -409,9 +454,17 @@ contract JobManager is IJobManager, SepoliaConfig {
     // REQUEST LIFECYCLE FUNCTIONS
     // ========================================
 
-    function submitRequest(uint256 datasetId, JobParams calldata params) external returns (uint256 requestId) {
+    function submitRequest(uint256 datasetId, JobParams calldata params, uint256 baseFee) 
+        external 
+        payable 
+        returns (uint256 requestId) 
+    {
         if (!DATASET_REGISTRY.doesDatasetExist(datasetId)) {
             revert DatasetNotFound();
+        }
+
+        if (msg.value < baseFee) {
+            revert InsufficientPayment();
         }
 
         // Validate params early to avoid wasting gas on invalid requests
@@ -425,7 +478,10 @@ contract JobManager is IJobManager, SepoliaConfig {
             params: params,
             status: RequestStatus.PENDING,
             timestamp: block.timestamp,
-            jobId: 0
+            jobId: 0,
+            baseFee: baseFee,
+            computeAllowance: msg.value - baseFee,
+            gasDebtToSeller: 0
         });
 
         _buyerRequests[msg.sender][datasetId].push(requestId);
@@ -433,11 +489,18 @@ contract JobManager is IJobManager, SepoliaConfig {
         emit RequestSubmitted(requestId, datasetId, msg.sender);
     }
 
-    function acceptRequest(uint256 requestId) external returns (uint256 jobId) {
+    function acceptRequest(uint256 requestId) external nonReentrant returns (uint256 jobId) {
+        uint256 gasBefore = gasleft();
         JobRequest storage request = _requests[requestId];
 
         if (request.status != RequestStatus.PENDING) {
             revert RequestNotPending();
+        }
+
+        // Pay base fee to seller immediately
+        (bool success, ) = payable(msg.sender).call{value: request.baseFee}("");
+        if (!success) {
+            revert PaymentFailed();
         }
 
         // Create job using internal logic. _createJob handles ownership check.
@@ -447,14 +510,18 @@ contract JobManager is IJobManager, SepoliaConfig {
         // Update request state
         request.status = RequestStatus.ACCEPTED;
         request.jobId = jobId;
+        request.timestamp = block.timestamp; // Reset for stall detection
 
         // Create reverse mapping for finalization lookup
         _jobToRequest[jobId] = requestId;
 
+        // Track gas for acceptRequest operation
+        _trackGasAndMaybePayout(requestId, gasBefore);
+
         emit RequestAccepted(requestId, jobId);
     }
 
-    function rejectRequest(uint256 requestId) external {
+    function rejectRequest(uint256 requestId) external nonReentrant {
         JobRequest storage request = _requests[requestId];
 
         if (request.status != RequestStatus.PENDING) {
@@ -465,11 +532,21 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotDatasetOwner();
         }
 
+        // Refund full amount to buyer on rejection
+        uint256 totalRefund = request.baseFee + request.computeAllowance;
         request.status = RequestStatus.REJECTED;
+
+        if (totalRefund > 0) {
+            (bool success, ) = payable(request.buyer).call{value: totalRefund}("");
+            if (!success) {
+                revert PaymentFailed();
+            }
+        }
+
         emit RequestRejected(requestId);
     }
 
-    function cancelRequest(uint256 requestId) external {
+    function cancelRequest(uint256 requestId) external nonReentrant {
         JobRequest storage request = _requests[requestId];
 
         if (request.status != RequestStatus.PENDING) {
@@ -480,8 +557,95 @@ contract JobManager is IJobManager, SepoliaConfig {
             revert NotRequestBuyer();
         }
 
+        // Full refund for pending requests
+        uint256 totalRefund = request.baseFee + request.computeAllowance;
         request.status = RequestStatus.REJECTED; // Reuse REJECTED for cancelled
+
+        if (totalRefund > 0) {
+            (bool success, ) = payable(msg.sender).call{value: totalRefund}("");
+            if (!success) {
+                revert PaymentFailed();
+            }
+        }
+
         emit RequestCancelled(requestId);
+    }
+
+    function reclaimStalled(uint256 requestId) external nonReentrant {
+        JobRequest storage request = _requests[requestId];
+
+        if (msg.sender != request.buyer) {
+            revert NotRequestBuyer();
+        }
+
+        if (request.status != RequestStatus.ACCEPTED) {
+            revert RequestNotPending();
+        }
+
+        if (block.timestamp <= request.timestamp + STALL_TIMEOUT) {
+            revert NotStalled();
+        }
+
+        // Pay seller any earned debt
+        if (request.gasDebtToSeller > 0) {
+            _payoutSeller(requestId);
+        }
+
+        // Refund remaining to buyer
+        uint256 refund = request.computeAllowance;
+        request.computeAllowance = 0;
+        request.status = RequestStatus.REJECTED; // Mark terminated
+
+        if (refund > 0) {
+            (bool success, ) = payable(request.buyer).call{value: refund}("");
+            if (!success) {
+                revert PaymentFailed();
+            }
+        }
+
+        emit RequestStalled(requestId);
+    }
+
+    function requestPayout(uint256 requestId) external {
+        JobRequest storage request = _requests[requestId];
+        
+        if (!_isDatasetOwner(request.datasetId)) {
+            revert NotDatasetOwner();
+        }
+
+        if (request.status != RequestStatus.ACCEPTED) {
+            revert RequestNotPending();
+        }
+
+        _payoutSeller(requestId);
+    }
+
+    function topUpAllowance(uint256 requestId) external payable {
+        JobRequest storage request = _requests[requestId];
+
+        if (msg.sender != request.buyer) {
+            revert NotRequestBuyer();
+        }
+
+        if (request.status != RequestStatus.ACCEPTED) {
+            revert RequestNotPending();
+        }
+
+        request.computeAllowance += msg.value;
+        emit AllowanceToppedUp(requestId, msg.value);
+    }
+
+    function setPaymentThreshold(uint256 newThreshold) external {
+        if (msg.sender != admin) {
+            revert NotAuthorized();
+        }
+
+        if (newThreshold < 0.01 ether || newThreshold > 1 ether) {
+            revert NotAuthorized();
+        }
+
+        paymentThreshold = newThreshold;
+        emit ThresholdUpdated(newThreshold);
     }
 
     // ========================================
@@ -950,5 +1114,53 @@ contract JobManager is IJobManager, SepoliaConfig {
         euint64 result = FHE.mul(quotient, bucket64);
 
         return result;
+    }
+
+    // ---- Payment Helpers ----
+    /// @notice Tracks gas usage and maybe pays out seller if threshold reached
+    /// @param requestId The request ID
+    /// @param gasBefore The gas before the operation
+    function _trackGasAndMaybePayout(uint256 requestId, uint256 gasBefore) internal {
+        JobRequest storage request = _requests[requestId];
+        
+        uint256 gasUsed = gasBefore - gasleft();
+        uint256 cost = gasUsed * tx.gasprice;
+        
+        // STRICT: Must have sufficient allowance to pay for work
+        if (cost > request.computeAllowance) {
+            revert InsufficientAllowance();
+        }
+        
+        // Accumulate debt
+        request.computeAllowance -= cost;
+        request.gasDebtToSeller += cost;
+        
+        // Auto-payout if threshold reached
+        if (request.gasDebtToSeller >= paymentThreshold) {
+            _payoutSeller(requestId);
+        }
+    }
+
+    /// @notice Pays out accumulated gas debt to seller
+    /// @param requestId The request ID
+    function _payoutSeller(uint256 requestId) internal {
+        JobRequest storage request = _requests[requestId];
+        uint256 debt = request.gasDebtToSeller;
+        
+        if (debt == 0) return;
+        
+        request.gasDebtToSeller = 0;
+        
+        // Get dataset owner
+        (, , , address seller, , , ) = DATASET_REGISTRY.getDataset(request.datasetId);
+        (bool success, ) = payable(seller).call{value: debt}("");
+        
+        if (!success) {
+            // Restore debt if payment fails
+            request.gasDebtToSeller = debt;
+            revert PaymentFailed();
+        }
+
+        emit SellerPaid(requestId, seller, debt);
     }
 }

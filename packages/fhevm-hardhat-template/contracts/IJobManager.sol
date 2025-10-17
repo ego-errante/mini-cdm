@@ -48,10 +48,14 @@ interface IJobManager {
         RequestStatus status;
         uint256 timestamp;
         uint256 jobId;
+        uint256 baseFee;
+        uint256 computeAllowance;
+        uint256 gasDebtToSeller;
     }
 
     // ---- views ----
     function nextJobId() external view returns (uint256);
+    function nextRequestId() external view returns (uint256);
 
     function jobBuyer(uint256 jobId) external view returns (address);
 
@@ -83,10 +87,14 @@ interface IJobManager {
     function finalize(uint256 jobId) external; // sealed; decryption allowed only if policy passes
 
     // ---- request lifecycle ----
-    function submitRequest(uint256 datasetId, JobParams calldata params) external returns (uint256 requestId);
+    function submitRequest(uint256 datasetId, JobParams calldata params, uint256 baseFee) external payable returns (uint256 requestId);
     function acceptRequest(uint256 requestId) external returns (uint256 jobId);
     function rejectRequest(uint256 requestId) external;
     function cancelRequest(uint256 requestId) external;
+    function reclaimStalled(uint256 requestId) external;
+    function requestPayout(uint256 requestId) external;
+    function topUpAllowance(uint256 requestId) external payable;
+    function setPaymentThreshold(uint256 newThreshold) external;
 
     // ---- events ----
     event JobOpened(uint256 indexed jobId, uint256 indexed datasetId, address indexed buyer);
@@ -97,6 +105,10 @@ interface IJobManager {
     event RequestRejected(uint256 indexed requestId);
     event RequestCompleted(uint256 indexed requestId, uint256 indexed jobId);
     event RequestCancelled(uint256 indexed requestId);
+    event RequestStalled(uint256 indexed requestId);
+    event SellerPaid(uint256 indexed requestId, address indexed seller, uint256 amount);
+    event AllowanceToppedUp(uint256 indexed requestId, uint256 amount);
+    event ThresholdUpdated(uint256 newThreshold);
 
     // ---- errors ----
     error JobClosed();
@@ -120,6 +132,11 @@ interface IJobManager {
     // ---- request errors ----
     error RequestNotPending();
     error NotRequestBuyer();
+    error InsufficientPayment();
+    error InsufficientAllowance();
+    error PaymentFailed();
+    error NotAuthorized();
+    error NotStalled();
 
     // Filter VM errors
     error FilterVMUnknownOpcode(uint8 opcode);

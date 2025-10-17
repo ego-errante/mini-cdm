@@ -88,24 +88,25 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open the job and expect the JobOpened event to be emitted
+      const nextJobId = await jobManagerContract.nextJobId();
       await expect(jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.alice, jobParams))
         .to.emit(jobManagerContract, "JobOpened")
-        .withArgs(0, testDataset.id, signers.alice); // jobId should be 0 for first job
+        .withArgs(nextJobId, testDataset.id, signers.alice.address); // jobId should be 1 for first job
 
-      const jobId = 0; // First job should have ID 0
+      const jobId = 1; // First job should have ID 1
 
       // Verify the job was properly created
       expect(await jobManagerContract.jobBuyer(jobId)).to.equal(signers.alice.address);
       expect(await jobManagerContract.jobOpen(jobId)).to.be.true;
-      expect(await jobManagerContract.nextJobId()).to.equal(1); // Should be incremented to 1
+      expect(await jobManagerContract.nextJobId()).to.equal(nextJobId + 1n); // Should be incremented
     });
 
     it("should initialize job state with zero values after openJob", async () => {
       const datasetId = 1;
       const jobParams = createDefaultJobParams();
 
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(datasetId, signers.alice.address, jobParams);
-      const jobId = 0;
 
       // Verify dataset is stored
       expect(await jobManagerContract.jobDataset(jobId)).to.equal(datasetId);
@@ -117,14 +118,14 @@ describe("JobManager", function () {
       expect(await jobManagerContract.jobOpen(jobId)).to.be.true;
 
       // Verify next job ID is incremented
-      expect(await jobManagerContract.nextJobId()).to.equal(1);
+      expect(await jobManagerContract.nextJobId()).to.equal(jobId + 1n);
     });
 
     it("should store different dataset IDs for different jobs", async () => {
       const testDataset2 = await setupTestDataset(datasetRegistryContract, jobManagerContractAddress, signers.alice, 2);
 
-      const job1Id = 0;
-      const job2Id = 1;
+      const job1Id = await jobManagerContract.nextJobId();
+      const job2Id = job1Id + 1n;
       const jobParams1 = createDefaultJobParams();
 
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.deployer.address, jobParams1);
@@ -267,8 +268,8 @@ describe("JobManager", function () {
       // Open a job
       const jobParams = createDefaultJobParams();
 
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.deployer).openJob(testDataset2.id, signers.deployer.address, jobParams);
-      const jobId = 0;
 
       await expect(
         jobManagerContract.connect(signers.deployer).pushRow(jobId, testDataset2.rows[0], testDataset2.proofs[0], 0),
@@ -281,8 +282,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Push row 0 - should succeed
       await jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
@@ -307,12 +308,12 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open first job
+      const jobId1 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId1 = 0;
 
       // Open second job
+      const jobId2 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId2 = 1;
 
       // Push row 0 to first job
       const rowIndex = 0;
@@ -331,8 +332,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Alice opens job
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Bob tries to push row - should fail
       const rowIndex = 0;
@@ -348,8 +349,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Push all rows
       for (let i = 0; i < testDataset.rows.length; i++) {
@@ -400,8 +401,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open job for this dataset
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(2, signers.bob.address, jobParams);
-      const jobId = 0;
 
       // Try to push a row with 1 column to a dataset registered as having 2 columns
       // This should fail because the schema doesn't match (row has 1 field but schema expects 2)
@@ -415,7 +416,7 @@ describe("JobManager", function () {
 
   describe("finalize", () => {
     it("should finalize a job successfully", async () => {
-      const jobId = 0;
+      const jobId = await jobManagerContract.nextJobId();
 
       // Execute a job
       const receipt = await executeCountJob(jobManagerContract, signers.alice, testDataset, signers.bob);
@@ -460,8 +461,8 @@ describe("JobManager", function () {
       };
 
       // Open a job with COUNT operation
+      const jobId = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, countJobParams);
-      const jobId = 0;
 
       // Push only the first row (not all rows)
       await jobManagerContract.connect(signers.alice).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
@@ -1520,8 +1521,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open and execute first job
+      const jobId1 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId1 = 0;
 
       // Push all rows and finalize first job
       for (let i = 0; i < testDataset.rows.length; i++) {
@@ -1548,8 +1549,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Bob runs first job
+      const jobId1 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId1 = 0;
 
       for (let i = 0; i < testDataset.rows.length; i++) {
         await jobManagerContract.connect(signers.alice).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
@@ -1584,8 +1585,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Bob runs job on first dataset
+      const jobId1 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset1.id, signers.bob.address, jobParams);
-      const jobId1 = 0;
 
       for (let i = 0; i < testDataset1.rows.length; i++) {
         await jobManagerContract
@@ -1613,8 +1614,8 @@ describe("JobManager", function () {
       const jobParams = createDefaultJobParams();
 
       // Open and execute first job
+      const jobId1 = await jobManagerContract.nextJobId();
       await jobManagerContract.connect(signers.alice).openJob(testDataset.id, signers.bob.address, jobParams);
-      const jobId1 = 0;
 
       for (let i = 0; i < testDataset.rows.length; i++) {
         await jobManagerContract.connect(signers.alice).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
@@ -1769,8 +1770,8 @@ async function executeCountJob(
   };
 
   // Open a job with COUNT operation
+  const jobId = await jobManagerContract.nextJobId();
   await jobManagerContract.connect(testDatasetOwner).openJob(testDataset.id, buyer, countJobParams);
-  const jobId = 0;
 
   // Push all rows
   for (let i = 0; i < testDataset.rows.length; i++) {
