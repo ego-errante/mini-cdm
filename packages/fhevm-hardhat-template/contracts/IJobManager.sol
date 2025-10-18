@@ -67,6 +67,11 @@ interface IJobManager {
     function getRequest(uint256 requestId) external view returns (JobRequest memory);
     function getBuyerRequests(address buyer, uint256 datasetId) external view returns (uint256[] memory);
     function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory);
+    function getJobProgress(uint256 jobId) external view returns (
+        uint256 totalRows,
+        uint256 processedRows,
+        uint256 remainingRows
+    );
 
 
     // ---- lifecycle ----
@@ -135,7 +140,6 @@ interface IJobManager {
     error InsufficientPayment();
     error InsufficientAllowance();
     error PaymentFailed();
-    error NotAuthorized();
     error NotStalled();
 
     // Filter VM errors

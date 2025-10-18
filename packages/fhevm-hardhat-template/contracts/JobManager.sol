@@ -14,9 +14,10 @@ import {IJobManager} from "./IJobManager.sol";
 import {IDatasetRegistry} from "./IDatasetRegistry.sol";
 import {RowDecoder} from "./RowDecoder.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 
 
-contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard {
+contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     // ========================================
     // CONSTANTS AND OPCODES
     // ========================================
@@ -83,16 +84,14 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard {
     // STATE VARIABLES
     // ========================================
 
-    constructor(address datasetRegistry) {
+    constructor(address datasetRegistry) Ownable(msg.sender) {
         DATASET_REGISTRY = IDatasetRegistry(datasetRegistry);
-        admin = msg.sender;
         _nextJobId = 1;
         _nextRequestId = 1;
     }
 
     // Payment management
     uint256 public paymentThreshold = 0.05 ether;
-    address public admin;
 
     uint256 private _nextJobId;
     mapping(uint256 jobId => Job job) private _jobs;
@@ -135,6 +134,25 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard {
 
     function jobDataset(uint256 jobId) external view returns (uint256) {
         return _jobs[jobId].datasetId;
+    }
+
+    function getJobProgress(uint256 jobId) external view returns (
+        uint256 totalRows,
+        uint256 processedRows,
+        uint256 remainingRows
+    ) {
+        Job storage job = _jobs[jobId];
+        totalRows = job.rowCount;
+        
+        // _jobLastProcessedRow stores last processed index
+        // If it's type(uint256).max, no rows processed yet
+        if (_jobLastProcessedRow[jobId] == type(uint256).max) {
+            processedRows = 0;
+        } else {
+            processedRows = _jobLastProcessedRow[jobId] + 1; // +1 because it's 0-indexed
+        }
+        
+        remainingRows = totalRows - processedRows;
     }
 
     // ========================================
@@ -635,15 +653,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard {
         emit AllowanceToppedUp(requestId, msg.value);
     }
 
-    function setPaymentThreshold(uint256 newThreshold) external {
-        if (msg.sender != admin) {
-            revert NotAuthorized();
-        }
-
-        if (newThreshold < 0.01 ether || newThreshold > 1 ether) {
-            revert NotAuthorized();
-        }
-
+    function setPaymentThreshold(uint256 newThreshold) external onlyOwner {
         paymentThreshold = newThreshold;
         emit ThresholdUpdated(newThreshold);
     }

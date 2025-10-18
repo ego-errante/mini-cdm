@@ -11,6 +11,7 @@ import {
   setupTestDataset,
   TestDataset,
   estimateJobAllowance,
+  estimateJobGas,
 } from "../utils";
 
 describe("Job Transactions", () => {
@@ -475,6 +476,372 @@ describe("Job Transactions", () => {
       // Verify job was completed
       const request = await jobManagerContract.getRequest(requestId);
       expect(request.status).to.equal(3); // COMPLETED
+    });
+  });
+
+  describe("Admin Functions", () => {
+    it("owner should be able to set payment threshold", async () => {
+      const newThreshold = ethers.parseEther("0.08");
+      const owner = signers.deployer; // deployer is the owner
+
+      await expect(jobManagerContract.connect(owner).setPaymentThreshold(newThreshold))
+        .to.emit(jobManagerContract, "ThresholdUpdated")
+        .withArgs(newThreshold);
+
+      expect(await jobManagerContract.paymentThreshold()).to.equal(newThreshold);
+    });
+
+    it("non-owner should not be able to set payment threshold", async () => {
+      const newThreshold = ethers.parseEther("0.08");
+      const nonOwner = signers.bob;
+
+      await expect(
+        jobManagerContract.connect(nonOwner).setPaymentThreshold(newThreshold),
+      ).to.be.revertedWithCustomError(jobManagerContract, "OwnableUnauthorizedAccount");
+    });
+
+    it("owner should be able to set threshold to any value including zero", async () => {
+      const owner = signers.deployer;
+
+      // Test very low threshold
+      const lowThreshold = ethers.parseEther("0.001");
+      await jobManagerContract.connect(owner).setPaymentThreshold(lowThreshold);
+      expect(await jobManagerContract.paymentThreshold()).to.equal(lowThreshold);
+
+      // Test very high threshold
+      const highThreshold = ethers.parseEther("10");
+      await jobManagerContract.connect(owner).setPaymentThreshold(highThreshold);
+      expect(await jobManagerContract.paymentThreshold()).to.equal(highThreshold);
+
+      // Test zero threshold
+      await jobManagerContract.connect(owner).setPaymentThreshold(0);
+      expect(await jobManagerContract.paymentThreshold()).to.equal(0);
+    });
+  });
+
+  describe("Manual Payout", () => {
+    it("seller should be able to request manual payout", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const requestId = 1; // IDs start at 1
+      const jobId = 1; // IDs start at 1
+
+      const baseFee = ethers.parseEther("0.01");
+      const computeAllowance = ethers.parseEther("0.1");
+      const totalValue = BigInt(baseFee) + BigInt(computeAllowance);
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      // Process one row to accumulate some debt
+      await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
+
+      const requestBefore = await jobManagerContract.getRequest(requestId);
+      const debtBefore = requestBefore.gasDebtToSeller;
+
+      expect(debtBefore).to.be.gt(0);
+
+      // Seller requests manual payout
+      const sellerBalanceBefore = await ethers.provider.getBalance(seller.address);
+      const tx = await jobManagerContract.connect(seller).requestPayout(requestId);
+      const receipt = await tx.wait();
+      const gasUsed = receipt!.gasUsed * receipt!.gasPrice;
+      const sellerBalanceAfter = await ethers.provider.getBalance(seller.address);
+
+      // Check that debt was paid out
+      const requestAfter = await jobManagerContract.getRequest(requestId);
+      expect(requestAfter.gasDebtToSeller).to.equal(0);
+
+      // Check seller received the payment (minus gas for the requestPayout call)
+      const netGain = sellerBalanceAfter - sellerBalanceBefore + gasUsed;
+      expect(netGain).to.equal(debtBefore);
+    });
+
+    it("non-seller should not be able to request payout", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const nonSeller = signers.deployer;
+      const requestId = 1; // IDs start at 1
+
+      const baseFee = ethers.parseEther("0.01");
+      const computeAllowance = ethers.parseEther("0.1");
+      const totalValue = BigInt(baseFee) + BigInt(computeAllowance);
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      await expect(jobManagerContract.connect(nonSeller).requestPayout(requestId)).to.be.revertedWithCustomError(
+        jobManagerContract,
+        "NotDatasetOwner",
+      );
+    });
+
+    it("should not allow payout on non-accepted request", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const requestId = 1; // IDs start at 1
+
+      const baseFee = ethers.parseEther("0.01");
+      const computeAllowance = ethers.parseEther("0.1");
+      const totalValue = BigInt(baseFee) + BigInt(computeAllowance);
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+      // Don't accept the request
+
+      // Should fail because request is not in ACCEPTED state
+      await expect(jobManagerContract.connect(seller).requestPayout(requestId)).to.be.revertedWithCustomError(
+        jobManagerContract,
+        "RequestNotPending",
+      );
+    });
+  });
+
+  describe("View Functions", () => {
+    it("should return pending requests for dataset", async () => {
+      const jobParams1 = createDefaultJobParams();
+      const jobParams2 = createDefaultJobParams();
+      const jobParams3 = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer1 = signers.bob;
+      const buyer2 = signers.deployer;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.01");
+      const totalValue = ethers.parseEther("0.1");
+
+      // Submit 3 requests
+      await jobManagerContract.connect(buyer1).submitRequest(datasetId, jobParams1, baseFee, { value: totalValue });
+      await jobManagerContract.connect(buyer1).submitRequest(datasetId, jobParams2, baseFee, { value: totalValue });
+      await jobManagerContract.connect(buyer2).submitRequest(datasetId, jobParams3, baseFee, { value: totalValue });
+
+      // All should be pending (IDs start at 1)
+      let pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
+      expect(pendingRequests.length).to.equal(3);
+      expect(pendingRequests[0]).to.equal(1);
+      expect(pendingRequests[1]).to.equal(2);
+      expect(pendingRequests[2]).to.equal(3);
+
+      // Accept one request
+      await jobManagerContract.connect(seller).acceptRequest(1);
+
+      // Should now only show 2 pending
+      pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
+      expect(pendingRequests.length).to.equal(2);
+      expect(pendingRequests[0]).to.equal(2);
+      expect(pendingRequests[1]).to.equal(3);
+
+      // Reject one request
+      await jobManagerContract.connect(seller).rejectRequest(2);
+
+      // Should now only show 1 pending
+      pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
+      expect(pendingRequests.length).to.equal(1);
+      expect(pendingRequests[0]).to.equal(3);
+    });
+
+    it("should return empty array when no pending requests", async () => {
+      const datasetId = testDataset.id;
+
+      const pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
+      expect(pendingRequests.length).to.equal(0);
+    });
+
+    it("should return correct nextRequestId", async () => {
+      const nextId = await jobManagerContract.nextRequestId();
+      expect(nextId).to.equal(1); // Starts at 1
+
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const baseFee = ethers.parseEther("0.01");
+      const totalValue = ethers.parseEther("0.1");
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+
+      const nextIdAfter = await jobManagerContract.nextRequestId();
+      expect(nextIdAfter).to.equal(2);
+    });
+
+    it("should track job progress correctly", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.01");
+      const totalValue = ethers.parseEther("0.1");
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+      await jobManagerContract.connect(seller).acceptRequest(1);
+
+      const request = await jobManagerContract.getRequest(1);
+      const jobId = request.jobId;
+
+      // Check initial progress (no rows processed)
+      let progress = await jobManagerContract.getJobProgress(jobId);
+      expect(progress.totalRows).to.equal(testDataset.rows.length);
+      expect(progress.processedRows).to.equal(0);
+      expect(progress.remainingRows).to.equal(testDataset.rows.length);
+
+      // Process first row
+      await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
+
+      progress = await jobManagerContract.getJobProgress(jobId);
+      expect(progress.totalRows).to.equal(testDataset.rows.length);
+      expect(progress.processedRows).to.equal(1);
+      expect(progress.remainingRows).to.equal(testDataset.rows.length - 1);
+
+      // Process second row
+      await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[1], testDataset.proofs[1], 1);
+
+      progress = await jobManagerContract.getJobProgress(jobId);
+      expect(progress.processedRows).to.equal(2);
+      expect(progress.remainingRows).to.equal(testDataset.rows.length - 2);
+
+      // Process all remaining rows
+      for (let i = 2; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+
+      progress = await jobManagerContract.getJobProgress(jobId);
+      expect(progress.processedRows).to.equal(testDataset.rows.length);
+      expect(progress.remainingRows).to.equal(0);
+    });
+  });
+
+  describe("Proactive vs Reactive Allowance Management", () => {
+    it("should fail without monitoring and succeed with proactive top-ups", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.01");
+
+      // Intentionally low allowance that won't cover all rows
+      // This should cover acceptRequest + 1-2 rows before running out
+      const insufficientAllowance = ethers.parseEther("0.001");
+
+      // ========================================
+      // JOB 1: No monitoring - should FAIL
+      // ========================================
+      console.log("\n--- Job 1: No monitoring (will fail) ---");
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + insufficientAllowance });
+
+      const requestId1 = 1;
+      await jobManagerContract.connect(seller).acceptRequest(requestId1);
+
+      const request1 = await jobManagerContract.getRequest(requestId1);
+      const jobId1 = request1.jobId;
+
+      // Seller tries to process rows without buyer monitoring
+      let job1Failed = false;
+      let job1RowsProcessed = 0;
+
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        try {
+          await jobManagerContract.connect(seller).pushRow(jobId1, testDataset.rows[i], testDataset.proofs[i], i);
+          job1RowsProcessed++;
+          console.log(`Row ${i}: Success`);
+        } catch (error: any) {
+          if (error.message.includes("InsufficientAllowance")) {
+            console.log(`Row ${i}: Failed - InsufficientAllowance`);
+            job1Failed = true;
+            break;
+          }
+          throw error;
+        }
+      }
+
+      expect(job1Failed).to.be.true;
+      expect(job1RowsProcessed).to.be.lt(testDataset.rows.length);
+      console.log(`Job 1 processed ${job1RowsProcessed}/${testDataset.rows.length} rows before failing`);
+
+      // ========================================
+      // JOB 2: Proactive monitoring - should SUCCEED
+      // ========================================
+      console.log("\n--- Job 2: Proactive monitoring (will succeed) ---");
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + insufficientAllowance });
+
+      const requestId2 = 2;
+      await jobManagerContract.connect(seller).acceptRequest(requestId2);
+
+      const request2 = await jobManagerContract.getRequest(requestId2);
+      const jobId2 = request2.jobId;
+
+      let totalToppedUp = 0n;
+      let topUpCount = 0;
+
+      // Seller processes rows with buyer actively monitoring
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        // BEFORE each pushRow, buyer checks and tops up if needed
+        const currentRequest = await jobManagerContract.getRequest(requestId2);
+        const progress = await jobManagerContract.getJobProgress(jobId2);
+
+        // Estimate remaining cost
+        const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+        const estimatedGas = estimateJobGas(1, testDataset.numColumns, "COUNT", 0);
+        const estimatedCostPerRow = estimatedGas * gasPrice;
+        const remainingRows = progress.remainingRows;
+        const estimatedRemainingCost = estimatedCostPerRow * BigInt(remainingRows);
+
+        // Top up if allowance won't cover remaining work (with 2x safety margin)
+        const requiredAllowance = estimatedRemainingCost * 2n;
+
+        if (currentRequest.computeAllowance < requiredAllowance) {
+          const topUpAmount = requiredAllowance - currentRequest.computeAllowance;
+          console.log(
+            `Row ${i}: Allowance ${ethers.formatEther(currentRequest.computeAllowance)} too low, topping up ${ethers.formatEther(topUpAmount)}`,
+          );
+
+          await jobManagerContract.connect(buyer).topUpAllowance(requestId2, { value: topUpAmount });
+          totalToppedUp += topUpAmount;
+          topUpCount++;
+        }
+
+        // Now seller can safely push the row
+        await jobManagerContract.connect(seller).pushRow(jobId2, testDataset.rows[i], testDataset.proofs[i], i);
+        console.log(`Row ${i}: Success`);
+      }
+
+      // Check allowance one more time before finalize
+      const finalRequest = await jobManagerContract.getRequest(requestId2);
+      const finalProgress = await jobManagerContract.getJobProgress(jobId2);
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const finalizeGas = estimateJobGas(1, testDataset.numColumns, "COUNT", 0);
+      const finalizeGasEstimate = finalizeGas * gasPrice * 2n;
+
+      if (finalRequest.computeAllowance < finalizeGasEstimate) {
+        const topUpAmount = finalizeGasEstimate - finalRequest.computeAllowance;
+        console.log(`Finalize: Topping up ${ethers.formatEther(topUpAmount)} for finalize operation`);
+        await jobManagerContract.connect(buyer).topUpAllowance(requestId2, { value: topUpAmount });
+        totalToppedUp += topUpAmount;
+        topUpCount++;
+      }
+
+      // Finalize should succeed
+      await jobManagerContract.connect(seller).finalize(jobId2);
+
+      console.log(`\nJob 2 succeeded!`);
+      console.log(`Total topped up: ${ethers.formatEther(totalToppedUp)} ETH in ${topUpCount} top-ups`);
+
+      // Verify job 2 completed successfully
+      const completedRequest = await jobManagerContract.getRequest(requestId2);
+      expect(completedRequest.status).to.equal(3); // COMPLETED
+      expect(topUpCount).to.be.gt(0); // Should have required at least one top-up
+
+      const completedProgress = await jobManagerContract.getJobProgress(jobId2);
+      expect(completedProgress.processedRows).to.equal(testDataset.rows.length);
+      expect(completedProgress.remainingRows).to.equal(0);
     });
   });
 });
