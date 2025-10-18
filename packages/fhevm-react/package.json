@@ -9,6 +9,7 @@
     "url": "git+https://github.com/zama-ai/fhevm-react-template.git"
   },
   "dependencies": {
+    "@fhevm/shared": "*",
     "@zama-fhe/relayer-sdk": "0.2.0",
     "ethers": "6.15.0",
     "idb": "^8.0.3",

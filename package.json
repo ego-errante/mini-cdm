@@ -16,6 +16,9 @@
     "is-hardhat-node-running": "node ./scripts/is-hardhat-node-running.mjs",
     "hardhat-node": "npx -w ./packages/fhevm-hardhat-template hardhat node --verbose",
     "deploy:sepolia": "npx -w ./packages/fhevm-hardhat-template hardhat deploy --network sepolia",
-    "deploy:hardhat-node": "npm run is-hardhat-node-running && npx -w ./packages/fhevm-hardhat-template hardhat deploy --network localhost"
+    "deploy:hardhat-node": "npm run is-hardhat-node-running && npx -w ./packages/fhevm-hardhat-template hardhat deploy --network localhost",
+    "build:shared": "npm run build -w packages/fhevm-shared",
+    "dev:shared": "npm run watch -w packages/fhevm-shared",
+    "clean:shared": "npm run clean -w packages/fhevm-shared"
   }
 }
