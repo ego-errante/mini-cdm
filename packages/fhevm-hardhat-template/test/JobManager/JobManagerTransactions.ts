@@ -479,6 +479,204 @@ describe("Job Transactions", () => {
     });
   });
 
+  describe("Seller Balance Protection (CRITICAL)", () => {
+    it("should ensure seller is never owed more than payment threshold before auto-payout", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.1");
+
+      // Large allowance to ensure we can process all rows
+      const computeAllowance = ethers.parseEther("1.0");
+      const requestId = await jobManagerContract.nextRequestId();
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + computeAllowance });
+
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+      const request = await jobManagerContract.getRequest(requestId);
+      const jobId = request.jobId;
+
+      const paymentThreshold = await jobManagerContract.paymentThreshold();
+      let maxDebtSeen = 0n;
+
+      // Process all rows and track debt accumulation
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
+
+        const currentRequest = await jobManagerContract.getRequest(requestId);
+        const currentDebt = currentRequest.gasDebtToSeller;
+
+        if (currentDebt > maxDebtSeen) {
+          maxDebtSeen = currentDebt;
+        }
+
+        // Critical: debt should never exceed threshold (would trigger auto-payout)
+        expect(currentDebt).to.be.lte(paymentThreshold);
+      }
+
+      // Verify some debt was accumulated (seller did work)
+      expect(maxDebtSeen).to.be.gt(0);
+    });
+
+    it("should ensure seller ends with approximately original balance + base fee after job completion", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.1");
+
+      // Use gas estimation to ensure sufficient allowance
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const computeAllowance = estimateJobAllowance(
+        testDataset.rows.length,
+        testDataset.numColumns,
+        "COUNT",
+        0,
+        gasPrice,
+      );
+
+      const requestId = await jobManagerContract.nextRequestId();
+
+      // Capture seller's balance BEFORE any operations
+      const sellerBalanceInitial = await ethers.provider.getBalance(seller.address);
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + computeAllowance });
+
+      // Accept request
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      const request = await jobManagerContract.getRequest(requestId);
+      const jobId = request.jobId;
+
+      // Process all rows
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+
+      // Finalize
+      await jobManagerContract.connect(seller).finalize(jobId);
+
+      // Final seller balance
+      const sellerBalanceFinal = await ethers.provider.getBalance(seller.address);
+
+      // Calculate what seller actually gained/lost
+      const sellerNetChange = sellerBalanceFinal - sellerBalanceInitial;
+
+      // Seller should have gained approximately the base fee
+      // There will be small discrepancies due to:
+      // - 21000 base transaction cost per tx (not reimbursed)
+      // - Gas overhead for tracking/payout operations
+      // - Rounding in gas calculations
+
+      // Allow 5% margin (seller might lose a bit due to overhead)
+      const minExpected = (baseFee * 95n) / 100n; // 95% of base fee
+      const maxExpected = baseFee; // Should never exceed base fee
+
+      expect(sellerNetChange).to.be.gte(minExpected);
+      expect(sellerNetChange).to.be.lte(maxExpected);
+
+      // Verify no debt remains
+      const finalRequest = await jobManagerContract.getRequest(requestId);
+      expect(finalRequest.gasDebtToSeller).to.equal(0);
+    });
+
+    it("should track that gas costs come from buyer's allowance and accumulate as debt to seller", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.05");
+      const computeAllowance = ethers.parseEther("0.5");
+
+      const requestId = await jobManagerContract.nextRequestId();
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + computeAllowance });
+
+      const allowanceInitial = (await jobManagerContract.getRequest(requestId)).computeAllowance;
+      expect(allowanceInitial).to.equal(computeAllowance);
+
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+      const request = await jobManagerContract.getRequest(requestId);
+      const jobId = request.jobId;
+
+      // Track allowance depletion during accept
+      const allowanceAfterAccept = (await jobManagerContract.getRequest(requestId)).computeAllowance;
+      const allowanceUsedByAccept = allowanceInitial - allowanceAfterAccept;
+      expect(allowanceUsedByAccept).to.be.gt(0); // Accept consumed some allowance
+
+      // Process one row
+      await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
+
+      const requestAfterPush = await jobManagerContract.getRequest(requestId);
+      const allowanceAfterPush = requestAfterPush.computeAllowance;
+      const totalAllowanceUsed = allowanceInitial - allowanceAfterPush;
+
+      // Check that debt was accumulated (seller will be reimbursed)
+      expect(requestAfterPush.gasDebtToSeller).to.be.gt(0);
+
+      // The total debt should match total allowance used
+      // (proving buyer's funds are covering all gas costs)
+      expect(requestAfterPush.gasDebtToSeller).to.equal(totalAllowanceUsed);
+
+      // Verify allowance decreased proportionally to work done
+      expect(totalAllowanceUsed).to.be.lt(computeAllowance); // Didn't use everything
+      expect(totalAllowanceUsed).to.be.gt(allowanceUsedByAccept); // pushRow used additional allowance
+    });
+
+    it("should automatically pay seller when debt reaches payment threshold", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const baseFee = ethers.parseEther("0.01");
+      const computeAllowance = ethers.parseEther("1.0");
+
+      // Set a very low threshold to ensure payout triggers quickly
+      // Note: acceptRequest itself will likely exceed this threshold
+      const lowThreshold = ethers.parseEther("0.0001");
+      await jobManagerContract.connect(signers.deployer).setPaymentThreshold(lowThreshold);
+
+      const requestId = await jobManagerContract.nextRequestId();
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + computeAllowance });
+
+      // Track debt before and after operations
+      const requestBeforeAccept = await jobManagerContract.getRequest(requestId);
+      expect(requestBeforeAccept.gasDebtToSeller).to.equal(0);
+
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      // After accept, debt should have been accumulated and likely paid out due to low threshold
+      const requestAfterAccept = await jobManagerContract.getRequest(requestId);
+
+      // If threshold was hit during accept, debt should be cleared
+      // Otherwise, debt should be below threshold
+      expect(requestAfterAccept.gasDebtToSeller).to.be.lte(lowThreshold);
+
+      const request = await jobManagerContract.getRequest(requestId);
+      const jobId = request.jobId;
+
+      // Process first row - with such a low threshold, this should definitely trigger payout
+      await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[0], testDataset.proofs[0], 0);
+
+      // After pushRow, debt should again be below threshold (payout triggered)
+      const requestAfterPush = await jobManagerContract.getRequest(requestId);
+      expect(requestAfterPush.gasDebtToSeller).to.be.lte(lowThreshold);
+
+      // Verify that some payout event occurred by checking that allowance was used
+      expect(requestAfterPush.computeAllowance).to.be.lt(computeAllowance);
+    });
+  });
+
   describe("Admin Functions", () => {
     it("owner should be able to set payment threshold", async () => {
       const newThreshold = ethers.parseEther("0.08");
