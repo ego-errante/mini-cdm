@@ -1,6 +1,6 @@
 # @fhevm/shared
 
-Shared utilities and types for FHEVM packages in the mini-dcm monorepo.
+Shared utilities and types for FHEVM packages in the mini-cdm monorepo.
 
 ## Overview
 

@@ -9,23 +9,41 @@ const func: DeployFunction = async function (hre: HardhatRuntimeEnvironment) {
   const chainId = await hre.getChainId();
   const chainName = hre.network.name;
 
-  const contractName = "FHECounter";
-  const deployed = await deploy(contractName, {
+  // Deploy DatasetRegistry first
+  const datasetRegistryName = "DatasetRegistry";
+  const deployedDatasetRegistry = await deploy(datasetRegistryName, {
     from: deployer,
     log: true,
   });
 
-  console.log(`${contractName} contract address: ${deployed.address}`);
-  console.log(`${contractName} chainId: ${chainId}`);
-  console.log(`${contractName} chainName: ${chainName}`);
+  console.log(`${datasetRegistryName} contract address: ${deployedDatasetRegistry.address}`);
+  console.log(`${datasetRegistryName} chainId: ${chainId}`);
+  console.log(`${datasetRegistryName} chainName: ${chainName}`);
 
-  // Generates:
-  //  - <root>/packages/site/abi/FHECounterABI.ts
-  //  - <root>/packages/site/abi/FHECounterAddresses.ts
-  postDeploy(chainName, contractName);
+  // Deploy JobManager with DatasetRegistry address
+  const jobManagerName = "JobManager";
+  const deployedJobManager = await deploy(jobManagerName, {
+    from: deployer,
+    args: [deployedDatasetRegistry.address],
+    log: true,
+  });
+
+  console.log(`${jobManagerName} contract address: ${deployedJobManager.address}`);
+  console.log(`${jobManagerName} chainId: ${chainId}`);
+  console.log(`${jobManagerName} chainName: ${chainName}`);
+
+  // Set the JobManager address on the DatasetRegistry
+  const DatasetRegistry = await hre.ethers.getContractAt(datasetRegistryName, deployedDatasetRegistry.address);
+  const tx = await DatasetRegistry.setJobManager(deployedJobManager.address);
+  await tx.wait();
+  console.log(`Set JobManager address on DatasetRegistry`);
+
+  // Generate ABI files for both contracts
+  postDeploy(chainName, datasetRegistryName);
+  postDeploy(chainName, jobManagerName);
 };
 
 export default func;
 
-func.id = "deploy_fheCounter"; // id required to prevent reexecution
-func.tags = ["FHECounter"];
+func.id = "deploy_datasetRegistry_and_jobManager";
+func.tags = ["DatasetRegistry", "JobManager"];

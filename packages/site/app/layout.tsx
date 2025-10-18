@@ -2,10 +2,11 @@ import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import Image from "next/image";
+import { LuDatabaseZap } from "react-icons/lu";
 
 export const metadata: Metadata = {
-  title: "Zama FHEVM SDK Quickstart",
-  description: "Zama FHEVM SDK Quickstart app",
+  title: "Mini CDM - Confidential Data Marketplace",
+  description: "Confidential Data Marketplace - Mini CDM",
 };
 
 export default async function RootLayout({
@@ -15,16 +16,14 @@ export default async function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className={`zama-bg text-foreground antialiased`}>
-        <div className="fixed inset-0 w-full h-full zama-bg z-[-20] min-w-[850px]"></div>
+      <body className={`text-foreground antialiased`}>
+        <div className="fixed inset-0 w-full h-full z-[-20] min-w-[850px]"></div>
         <main className="flex flex-col max-w-screen-lg mx-auto pb-20 min-w-[850px]">
           <nav className="flex w-full px-3 md:px-0 h-fit py-10 justify-between items-center">
-            <Image
-              src="/zama-logo.svg"
-              alt="Zama Logo"
-              width={120}
-              height={120}
-            />
+            <div className="flex items-center gap-1">
+              <LuDatabaseZap className="size-10" />
+              <span className="text-2xl font-bold">CDM</span>
+            </div>
           </nav>
           <Providers>{children}</Providers>
         </main>
