@@ -61,7 +61,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
         JobParams params;
         address buyer;
         uint256 datasetId;
-        bool isOpen;
         bool isFinalized;
         euint256 result;
         // Cached dataset properties for gas optimization
@@ -129,7 +128,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     }
 
     function jobOpen(uint256 jobId) external view returns (bool) {
-        return _jobs[jobId].isOpen;
+        return !_jobs[jobId].isFinalized;
     }
 
     function jobDataset(uint256 jobId) external view returns (uint256) {
@@ -153,6 +152,21 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
         }
         
         remainingRows = totalRows - processedRows;
+    }
+
+    function getJobResult(uint256 jobId) external view returns (
+        bool isFinalized,
+        euint256 result,
+        ebool isOverflow
+    ) {
+        Job storage job = _jobs[jobId];
+        
+        // Job must be finalized to have a result
+        if (!job.isFinalized) {
+            revert JobNotFinalized();
+        }
+        
+        return (job.isFinalized, job.result, _state[jobId].isOverflow);
     }
 
     // ========================================
@@ -278,7 +292,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
             params: params,
             buyer: buyer,
             datasetId: datasetId,
-            isOpen: true,
             isFinalized: false,
             result: initValue256,
             merkleRoot: merkleRoot,
@@ -315,7 +328,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     }
 
     function _isJobOpen(uint256 jobId) internal view returns (bool) {
-        return _jobs[jobId].isOpen;
+        return !_jobs[jobId].isFinalized;
     }
 
     function pushRow(
@@ -349,7 +362,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     /// @param rowIndex The row index being processed
     function _validateRowProcessing(Job storage job, uint256 jobId, uint256 rowIndex) internal view {
         // Basic job validation
-        if (!job.isOpen) {
+        if (job.isFinalized) {
             revert JobClosed();
         }
 
@@ -442,26 +455,25 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
         uint256 requestId = _jobToRequest[jobId];
         if (_requests[requestId].jobId == jobId) {
             JobRequest storage request = _requests[requestId];
-            
-            // Track finalize gas
             _trackGasAndMaybePayout(requestId, gasBefore);
             
-            // Pay out any remaining debt
-            if (request.gasDebtToSeller > 0) {
-                _payoutSeller(requestId);
-            }
-            
-            // Refund remaining allowance to buyer
-            if (request.computeAllowance > 0) {
-                uint256 refund = request.computeAllowance;
-                request.computeAllowance = 0;
-                (bool success, ) = payable(request.buyer).call{value: refund}("");
-                if (!success) {
-                    revert PaymentFailed();
-                }
-            }
-            
+            // Final settlement: pay all remaining amounts
+            uint256 sellerPayout = request.gasDebtToSeller + request.baseFee;
+            uint256 buyerRefund = request.computeAllowance;
+            request.gasDebtToSeller = 0;
+            request.computeAllowance = 0;
             request.status = RequestStatus.COMPLETED;
+            
+            if (sellerPayout > 0) {
+                (, , , address seller, , , ) = DATASET_REGISTRY.getDataset(request.datasetId);
+                (bool s1, ) = payable(seller).call{value: sellerPayout}("");
+                if (!s1) revert PaymentFailed();
+            }
+            if (buyerRefund > 0) {
+                (bool s2, ) = payable(request.buyer).call{value: buyerRefund}("");
+                if (!s2) revert PaymentFailed();
+            }
+            
             emit RequestCompleted(requestId, jobId);
         }
 
@@ -515,12 +527,8 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
             revert RequestNotPending();
         }
 
-        // Pay base fee to seller immediately
-        (bool success, ) = payable(msg.sender).call{value: request.baseFee}("");
-        if (!success) {
-            revert PaymentFailed();
-        }
-
+        // Base fee is held in escrow until job completion (paid in finalize)
+        
         // Create job using internal logic. _createJob handles ownership check.
         JobParams memory params = request.params;
         jobId = _createJob(request.datasetId, request.buyer, params);
@@ -604,14 +612,15 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
             revert NotStalled();
         }
 
-        // Pay seller any earned debt
+        // Pay seller any earned debt for work done
         if (request.gasDebtToSeller > 0) {
             _payoutSeller(requestId);
         }
 
-        // Refund remaining to buyer
-        uint256 refund = request.computeAllowance;
+        // Refund remaining allowance + base fee to buyer (job incomplete)
+        uint256 refund = request.computeAllowance + request.baseFee;
         request.computeAllowance = 0;
+        request.baseFee = 0;
         request.status = RequestStatus.REJECTED; // Mark terminated
 
         if (refund > 0) {
@@ -696,7 +705,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     /// @param job The storage pointer to the job to validate
     /// @param jobId The job ID
     function _validateFinalization(Job storage job, uint256 jobId) internal view {
-        if (!job.isOpen) {
+        if (job.isFinalized) {
             revert JobClosed();
         }
 
@@ -781,7 +790,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
         address buyer = job.buyer;
 
         // Update job state
-        job.isOpen = false;
         job.isFinalized = true;
         job.result = result;
 

@@ -20,6 +20,7 @@ import {
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
   encryptKAnonymity,
+  estimateJobAllowance,
 } from "../utils";
 import {
   compileFilterDSL,
@@ -472,6 +473,76 @@ describe("JobManager", function () {
         jobManagerContract,
         "IncompleteProcessing",
       );
+    });
+
+    it("should allow buyer to retrieve job result after finalization", async () => {
+      const datasetId = 2;
+      const datasetOwner = signers.alice;
+      const buyer = signers.bob;
+      const baseFee = ethers.parseEther("0.01");
+
+      // Create a dataset with specific values for SUM operation
+      const rowConfigs = [
+        [{ type: "euint32", value: 10 }],
+        [{ type: "euint32", value: 20 }],
+        [{ type: "euint32", value: 33 }],
+        [{ type: "euint32", value: 40 }],
+      ] as RowConfig[][];
+
+      const dataset = await createAndRegisterDataset(
+        datasetRegistryContract,
+        jobManagerContractAddress,
+        datasetOwner,
+        rowConfigs,
+        datasetId,
+      );
+
+      const jobParams = {
+        ...createDefaultJobParams(),
+        op: OpCodes.SUM,
+        targetField: 0,
+        filter: {
+          bytecode: "0x", // Empty filter - accept all rows
+          consts: [],
+        },
+      };
+
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const computeAllowance = estimateJobAllowance(dataset.rows.length, dataset.numColumns, "SUM", 0, gasPrice);
+      const totalValue = BigInt(baseFee) + BigInt(computeAllowance);
+
+      await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
+      await jobManagerContract.connect(datasetOwner).acceptRequest(1);
+
+      const request = await jobManagerContract.getRequest(1);
+      const jobId = request.jobId;
+
+      // Before finalization, should revert
+      await expect(jobManagerContract.connect(buyer).getJobResult(jobId)).to.be.revertedWithCustomError(
+        jobManagerContract,
+        "JobNotFinalized",
+      );
+
+      // Process all rows and finalize
+      for (let i = 0; i < dataset.rows.length; i++) {
+        await jobManagerContract.connect(datasetOwner).pushRow(jobId, dataset.rows[i], dataset.proofs[i], i);
+      }
+      await jobManagerContract.connect(datasetOwner).finalize(jobId);
+
+      // After finalization, buyer can retrieve result
+      const result = await jobManagerContract.connect(buyer).getJobResult(jobId);
+      expect(result.isFinalized).to.be.true;
+
+      // Decrypt the result to verify it's correct
+      const decryptedResult = await fhevm.userDecryptEuint(
+        FhevmType.euint256,
+        result.result,
+        jobManagerContractAddress,
+        buyer,
+      );
+
+      // For SUM operation, result should equal sum of all values: 10 + 20 + 30 + 40 = 100
+      expect(decryptedResult).to.equal(BigInt(103));
     });
   });
 

@@ -72,6 +72,12 @@ interface IJobManager {
         uint256 processedRows,
         uint256 remainingRows
     );
+    
+    function getJobResult(uint256 jobId) external view returns (
+        bool isFinalized,
+        euint256 result,
+        ebool isOverflow
+    );
 
 
     // ---- lifecycle ----
@@ -117,6 +123,7 @@ interface IJobManager {
 
     // ---- errors ----
     error JobClosed();
+    error JobNotFinalized();
     error CooldownActive();
     error KAnonymityNotMet();
     error NotJobBuyer();
