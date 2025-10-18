@@ -76,7 +76,8 @@ const config: HardhatUserConfig = {
       // https://hardhat.org/hardhat-network/#solidity-optimizer-support
       optimizer: {
         enabled: true,
-        runs: 800,
+        runs: 200, // JobManager contract too large for 800 runs
+        // runs: 800,
       },
       evmVersion: "cancun",
     },

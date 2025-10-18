@@ -65,7 +65,6 @@ interface IJobManager {
 
     // ---- request views ----
     function getRequest(uint256 requestId) external view returns (JobRequest memory);
-    function getBuyerRequests(address buyer, uint256 datasetId) external view returns (uint256[] memory);
     function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory);
     function getJobProgress(uint256 jobId) external view returns (
         uint256 totalRows,

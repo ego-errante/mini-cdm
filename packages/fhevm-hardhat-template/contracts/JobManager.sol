@@ -107,7 +107,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     // Request management
     uint256 private _nextRequestId;
     mapping(uint256 requestId => JobRequest) private _requests;
-    mapping(address buyer => mapping(uint256 datasetId => uint256[])) private _buyerRequests;
     mapping(uint256 datasetId => uint256[]) private _datasetRequests; // For dataset owner lookup
     mapping(uint256 jobId => uint256 requestId) private _jobToRequest; // Reverse lookup
 
@@ -461,6 +460,7 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
             uint256 sellerPayout = request.gasDebtToSeller + request.baseFee;
             uint256 buyerRefund = request.computeAllowance;
             request.gasDebtToSeller = 0;
+            request.baseFee = 0;
             request.computeAllowance = 0;
             request.status = RequestStatus.COMPLETED;
             
@@ -514,7 +514,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
             gasDebtToSeller: 0
         });
 
-        _buyerRequests[msg.sender][datasetId].push(requestId);
         _datasetRequests[datasetId].push(requestId);
         emit RequestSubmitted(requestId, datasetId, msg.sender);
     }
@@ -673,10 +672,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
 
     function getRequest(uint256 requestId) external view returns (JobRequest memory) {
         return _requests[requestId];
-    }
-
-    function getBuyerRequests(address buyer, uint256 datasetId) external view returns (uint256[] memory) {
-        return _buyerRequests[buyer][datasetId];
     }
 
     function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory) {

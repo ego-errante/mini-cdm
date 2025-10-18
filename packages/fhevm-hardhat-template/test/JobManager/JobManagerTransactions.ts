@@ -123,38 +123,6 @@ describe("Job Transactions", () => {
     expect(request.computeAllowance).to.equal(totalValue - baseFee);
   });
 
-  it("should be able to retrieve buyer's requests for a dataset", async () => {
-    const jobParams1 = createDefaultJobParams();
-    const jobParams2 = createDefaultJobParams();
-    const datasetId = testDataset.id;
-    const buyer = signers.bob;
-    const baseFee = ethers.parseEther("0.01");
-    const totalValue = ethers.parseEther("0.1");
-
-    // Submit multiple requests
-    const requestId1 = await jobManagerContract.nextRequestId();
-    await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams1, baseFee, { value: totalValue });
-    const requestId2 = await jobManagerContract.nextRequestId();
-    await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams2, baseFee, { value: totalValue });
-
-    // Get buyer's requests
-    const buyerRequests = await jobManagerContract.getBuyerRequests(buyer.address, datasetId);
-
-    expect(buyerRequests.length).to.equal(2);
-    expect(buyerRequests[0]).to.equal(requestId1);
-    expect(buyerRequests[1]).to.equal(requestId2);
-  });
-
-  it("should return empty array for buyer with no requests", async () => {
-    const datasetId = testDataset.id;
-    const buyer = signers.bob;
-
-    // Get requests for buyer with no requests
-    const buyerRequests = await jobManagerContract.getBuyerRequests(buyer.address, datasetId);
-
-    expect(buyerRequests.length).to.equal(0);
-  });
-
   it("request should be marked completed when job finalizes", async () => {
     const jobParams = createDefaultJobParams();
     const datasetId = testDataset.id;
@@ -244,7 +212,7 @@ describe("Job Transactions", () => {
       ).to.be.revertedWithCustomError(jobManagerContract, "InsufficientPayment");
     });
 
-    it("should pay base fee to seller upon acceptRequest", async () => {
+    it("should hold base fee in escrow (not paid on accept)", async () => {
       const jobParams = createDefaultJobParams();
       const datasetId = testDataset.id;
       const buyer = signers.bob;
@@ -257,10 +225,69 @@ describe("Job Transactions", () => {
 
       await jobManagerContract.connect(buyer).submitRequest(datasetId, jobParams, baseFee, { value: totalValue });
 
-      await expect(await jobManagerContract.connect(seller).acceptRequest(requestId)).to.changeEtherBalance(
-        seller,
-        baseFee,
+      // Verify base fee is stored in request
+      const requestBefore = await jobManagerContract.getRequest(requestId);
+      expect(requestBefore.baseFee).to.equal(baseFee);
+
+      // Accept should NOT pay base fee (it's held in escrow until finalize)
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      // Base fee should still be in the contract
+      const requestAfter = await jobManagerContract.getRequest(requestId);
+      expect(requestAfter.baseFee).to.equal(baseFee);
+    });
+
+    it("should pay base fee to seller on finalize", async () => {
+      const jobParams = createDefaultJobParams();
+      const datasetId = testDataset.id;
+      const buyer = signers.bob;
+      const seller = signers.alice;
+      const requestId = await jobManagerContract.nextRequestId();
+
+      const baseFee = ethers.parseEther("0.1");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const computeAllowance = estimateJobAllowance(
+        testDataset.rows.length,
+        testDataset.numColumns,
+        "COUNT",
+        0,
+        gasPrice,
       );
+
+      await jobManagerContract
+        .connect(buyer)
+        .submitRequest(datasetId, jobParams, baseFee, { value: baseFee + computeAllowance });
+
+      await jobManagerContract.connect(seller).acceptRequest(requestId);
+
+      const request = await jobManagerContract.getRequest(requestId);
+      const jobId = request.jobId;
+
+      // Process all rows
+      for (let i = 0; i < testDataset.rows.length; i++) {
+        await jobManagerContract.connect(seller).pushRow(jobId, testDataset.rows[i], testDataset.proofs[i], i);
+      }
+
+      // Track seller balance before finalize
+      const sellerBalanceBefore = await ethers.provider.getBalance(seller.address);
+
+      // Finalize the job
+      const tx = await jobManagerContract.connect(seller).finalize(jobId);
+      const receipt = await tx.wait();
+
+      const sellerBalanceAfter = await ethers.provider.getBalance(seller.address);
+
+      // Calculate what seller actually gained (accounting for gas spent on finalize)
+      const gasCost = receipt?.gasUsed ? receipt.gasUsed * receipt.gasPrice : 0;
+      const sellerNetGain = sellerBalanceAfter - sellerBalanceBefore + BigInt(gasCost);
+
+      // Seller should receive: base fee + gas debt reimbursement
+      // The net gain should be at least the base fee (gas debt reimbursement is close to gas spent)
+      expect(sellerNetGain).to.be.gte(baseFee);
+
+      // Verify base fee was paid (should be 0 now)
+      const finalRequest = await jobManagerContract.getRequest(requestId);
+      expect(finalRequest.baseFee).to.equal(0);
     });
 
     it("should refund buyer on cancelRequest", async () => {
@@ -344,13 +371,17 @@ describe("Job Transactions", () => {
       await ethers.provider.send("evm_increaseTime", [STALL_TIMEOUT + 1]);
       await ethers.provider.send("evm_mine", []);
 
-      // Get remaining allowance before reclaim (acceptRequest consumed some)
+      // Get remaining allowance and base fee before reclaim (acceptRequest consumed some allowance)
       const requestBefore = await jobManagerContract.getRequest(requestId);
       const remainingAllowance = requestBefore.computeAllowance;
+      const baseFeeStored = requestBefore.baseFee;
+
+      // Buyer should get back: remaining allowance + base fee (job incomplete)
+      const expectedRefund = remainingAllowance + baseFeeStored;
 
       await expect(await jobManagerContract.connect(buyer).reclaimStalled(requestId)).to.changeEtherBalance(
         buyer,
-        remainingAllowance,
+        expectedRefund,
       );
     });
 
