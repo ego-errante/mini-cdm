@@ -9,10 +9,9 @@ import {
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
   setupTestDataset,
-  TestDataset,
-  KAnonymityLevels,
   encryptKAnonymity,
 } from "../utils";
+import { TestDataset, KAnonymityLevels } from "@fhevm/shared";
 
 describe("Merkle Integration", function () {
   let signers: Signers;

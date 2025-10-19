@@ -10,3 +10,9 @@ export * from "./constants";
 
 // Export utilities
 export * from "./utils";
+
+// Export encryption utilities
+export * from "./encryption";
+
+// Export merkle tree utilities
+export * from "./merkle";

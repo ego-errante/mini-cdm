@@ -5,19 +5,13 @@ import { ethers, fhevm } from "hardhat";
 import { createPackedEncryptedTable, createPackedEncryptedRow } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
-export interface TestDataset {
-  id: number;
-  rows: string[];
-  merkleRoot: string;
-  proofs: string[][];
-  numColumns: number;
-  rowCount: number;
-}
+import { TestDataset, RowConfig, DatasetObject, OpCodes, KAnonymityLevels } from "@fhevm/shared";
 
-export interface RowConfig {
+// Local type alias for compatibility with RowDecoder functions
+type LocalRowConfig = {
   type: "euint8" | "euint32" | "euint64";
   value: number;
-}
+};
 
 // Test utilities
 export async function generateMerkleTreeFromRows(rows: string[], datasetId: number) {
@@ -153,7 +147,7 @@ export async function generateTestDatasetWithCustomConfig(
   rowConfigs: RowConfig[][],
   datasetId: number = 1,
 ) {
-  const cellList = rowConfigs.flat();
+  const cellList = rowConfigs.flat() as LocalRowConfig[];
   const numColumns = rowConfigs[0].length;
   const rows = await createPackedEncryptedTable(contractAddress, signer, cellList, numColumns);
 
@@ -183,7 +177,7 @@ export async function generateTestDatasetWithCustomConfigPerRow(
 
   // Encrypt each row independently
   for (const rowConfig of rowConfigs) {
-    const encryptedRow = await createPackedEncryptedRow(contractAddress, signer, rowConfig);
+    const encryptedRow = await createPackedEncryptedRow(contractAddress, signer, rowConfig as LocalRowConfig[]);
     rows.push(encryptedRow);
   }
 
@@ -325,22 +319,7 @@ export async function createAndRegisterDatasetPerRow(
   return commitDatasetWithKAnonymity(datasetRegistryContract, datasetOwner, datasetId, testData, kAnonymity);
 }
 
-export const OpCodes = {
-  WEIGHTED_SUM: 0,
-  SUM: 1,
-  AVG_P: 2,
-  COUNT: 3,
-  MIN: 4,
-  MAX: 5,
-};
-
-export const KAnonymityLevels = {
-  NONE: 0,
-  MINIMAL: 3,
-  STANDARD: 5,
-  HIGH: 10,
-  MAXIMUM: 50,
-};
+// OpCodes and KAnonymityLevels now imported from @fhevm/shared
 
 export function createDefaultJobParams() {
   return {
@@ -372,15 +351,7 @@ export async function deployDatasetRegistryFixture() {
   return { datasetRegistryContract, datasetRegistryContractAddress };
 }
 
-export interface DatasetObject {
-  merkleRoot: string;
-  numColumns: bigint;
-  rowCount: bigint;
-  owner: string;
-  exists: boolean;
-  kAnonymity: number;
-  cooldownSec: number;
-}
+// DatasetObject now imported above
 
 export async function getDatasetObject(
   datasetRegistryContract: DatasetRegistry,

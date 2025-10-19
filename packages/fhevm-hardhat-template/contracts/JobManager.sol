@@ -57,19 +57,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
     // STRUCTS AND ENUMS
     // ========================================
 
-    struct Job {
-        JobParams params;
-        address buyer;
-        uint256 datasetId;
-        bool isFinalized;
-        euint256 result;
-        // Cached dataset properties for gas optimization
-        bytes32 merkleRoot;
-        uint256 rowCount;
-        uint32 cooldownSec;
-        euint32 kAnonymity;
-    }
-
     struct JobState {
         euint64 agg; // sum / weighted_sum accumulator
         euint64 minV;
@@ -672,28 +659,6 @@ contract JobManager is IJobManager, SepoliaConfig, ReentrancyGuard, Ownable {
 
     function getRequest(uint256 requestId) external view returns (JobRequest memory) {
         return _requests[requestId];
-    }
-
-    function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory) {
-        uint256[] memory allRequests = _datasetRequests[datasetId];
-        uint256 pendingCount = 0;
-
-        // Count pending requests
-        for (uint256 i = 0; i < allRequests.length; i++) {
-            if (_requests[allRequests[i]].status == RequestStatus.PENDING) {
-                pendingCount++;
-            }
-        }
-
-        // Build result array
-        uint256[] memory pendingRequestIds = new uint256[](pendingCount);
-        uint256 idx = 0;
-        for (uint256 i = 0; i < allRequests.length; i++) {
-            if (_requests[allRequests[i]].status == RequestStatus.PENDING) {
-                pendingRequestIds[idx++] = allRequests[i];
-            }
-        }
-        return pendingRequestIds;
     }
 
     /// @notice Validates that job can be finalized (open and all rows processed)

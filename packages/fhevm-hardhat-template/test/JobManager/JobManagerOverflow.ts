@@ -11,10 +11,9 @@ import {
   deployJobManagerFixture,
   createAndRegisterDataset,
   executeJobAndDecryptResult,
-  OpCodes,
-  RowConfig,
   parseJobFinalizedEvent,
 } from "../utils";
+import { OpCodes, RowConfig } from "@fhevm/shared";
 
 describe("JobManager Overflows", function () {
   let signers: Signers;

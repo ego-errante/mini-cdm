@@ -12,10 +12,6 @@ import {
   setupTestDataset,
   setupTestDatasetWithCooldown,
   generateTestDatasetWithEncryption,
-  TestDataset,
-  OpCodes,
-  KAnonymityLevels,
-  RowConfig,
   createAndRegisterDataset,
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
@@ -37,6 +33,7 @@ import {
   OpcodeName,
   buildBytecode,
 } from "../filter-dsl";
+import { KAnonymityLevels, OpCodes, RowConfig, TestDataset } from "@fhevm/shared";
 
 describe("JobManager", function () {
   let signers: Signers;

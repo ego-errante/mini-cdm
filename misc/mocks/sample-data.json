@@ -1,0 +1,86 @@
+[
+  {
+    "age": 28,
+    "annualIncome": 45000,
+    "creditScore": 680,
+    "debtAmount": 12000,
+    "employmentYears": 3
+  },
+  {
+    "age": 35,
+    "annualIncome": 72000,
+    "creditScore": 720,
+    "debtAmount": 8500,
+    "employmentYears": 7
+  },
+  {
+    "age": 42,
+    "annualIncome": 95000,
+    "creditScore": 780,
+    "debtAmount": 5000,
+    "employmentYears": 12
+  },
+  {
+    "age": 23,
+    "annualIncome": 32000,
+    "creditScore": 620,
+    "debtAmount": 18000,
+    "employmentYears": 1
+  },
+  {
+    "age": 51,
+    "annualIncome": 120000,
+    "creditScore": 810,
+    "debtAmount": 3000,
+    "employmentYears": 20
+  },
+  {
+    "age": 29,
+    "annualIncome": 55000,
+    "creditScore": 690,
+    "debtAmount": 15000,
+    "employmentYears": 4
+  },
+  {
+    "age": 38,
+    "annualIncome": 68000,
+    "creditScore": 740,
+    "debtAmount": 6800,
+    "employmentYears": 9
+  },
+  {
+    "age": 45,
+    "annualIncome": 88000,
+    "creditScore": 760,
+    "debtAmount": 4200,
+    "employmentYears": 15
+  },
+  {
+    "age": 26,
+    "annualIncome": 41000,
+    "creditScore": 650,
+    "debtAmount": 22000,
+    "employmentYears": 2
+  },
+  {
+    "age": 33,
+    "annualIncome": 78000,
+    "creditScore": 730,
+    "debtAmount": 9500,
+    "employmentYears": 6
+  },
+  {
+    "age": 48,
+    "annualIncome": 105000,
+    "creditScore": 790,
+    "debtAmount": 2800,
+    "employmentYears": 18
+  },
+  {
+    "age": 31,
+    "annualIncome": 62000,
+    "creditScore": 710,
+    "debtAmount": 11000,
+    "employmentYears": 5
+  }
+]

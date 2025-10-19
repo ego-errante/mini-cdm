@@ -40,3 +40,26 @@ export const ENCRYPTED_TYPE_SIZES = {
   ebool: 1,
   eaddress: 160,
 } as const;
+
+/**
+ * Job operation codes (corresponds to Op enum)
+ */
+export const OpCodes = {
+  WEIGHTED_SUM: 0,
+  SUM: 1,
+  AVG_P: 2,
+  COUNT: 3,
+  MIN: 4,
+  MAX: 5,
+} as const;
+
+/**
+ * K-Anonymity privacy levels
+ */
+export const KAnonymityLevels = {
+  NONE: 0,
+  MINIMAL: 3,
+  STANDARD: 5,
+  HIGH: 10,
+  MAXIMUM: 50,
+} as const;

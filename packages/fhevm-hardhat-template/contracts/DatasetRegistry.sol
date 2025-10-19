@@ -15,6 +15,8 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
 
     // ---- state ----
     mapping(uint256 => Dataset) private _datasets;
+    uint256[] private _datasetIds;
+    mapping(uint256 => uint256) private _datasetIdToIndex;
     address private _jobManager;
 
     struct Dataset {
@@ -81,6 +83,40 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         return _jobManager;
     }
 
+    // ---- enumeration ----
+    function getDatasetCount() external view returns (uint256) {
+        return _datasetIds.length;
+    }
+
+    function getDatasetIds(uint256 offset, uint256 limit)
+        external
+        view
+        returns (uint256[] memory)
+    {
+        uint256 total = _datasetIds.length;
+        if (offset >= total) {
+            return new uint256[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 length = end - offset;
+        uint256[] memory ids = new uint256[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            ids[i] = _datasetIds[offset + i];
+        }
+
+        return ids;
+    }
+
+    function getAllDatasetIds() external view returns (uint256[] memory) {
+        return _datasetIds;
+    }
+
     // ---- lifecycle ----
     function commitDataset(
         uint256 datasetId,
@@ -120,6 +156,10 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         dataset.owner = msg.sender;
         dataset.exists = true;
 
+        // Add to enumeration tracking
+        _datasetIdToIndex[datasetId] = _datasetIds.length;
+        _datasetIds.push(datasetId);
+
         // Convert external encrypted value to internal euint32
         euint32 internalKAnonymity = FHE.fromExternal(kAnonymity, inputProof);
       
@@ -149,6 +189,19 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         if (dataset.owner != msg.sender) {
             revert NotDatasetOwner();
         }
+
+        // Remove from enumeration tracking (swap and pop)
+        uint256 index = _datasetIdToIndex[datasetId];
+        uint256 lastIndex = _datasetIds.length - 1;
+
+        if (index != lastIndex) {
+            uint256 lastId = _datasetIds[lastIndex];
+            _datasetIds[index] = lastId;
+            _datasetIdToIndex[lastId] = index;
+        }
+
+        _datasetIds.pop();
+        delete _datasetIdToIndex[datasetId];
 
         // Delete the dataset
         delete _datasets[datasetId];

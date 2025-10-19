@@ -52,7 +52,7 @@ export default {
         },
       },
       backgroundImage: {
-        noise: "url('/noise.svg')",
+        noise: 'url("/noise.svg")',
       },
       borderRadius: {
         lg: "var(--radius)",

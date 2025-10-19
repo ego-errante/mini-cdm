@@ -1,0 +1,220 @@
+import { type FhevmInstance, type GenericStringStorage } from "@fhevm/react";
+import { ethers } from "ethers";
+import { RefObject, useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
+
+import { JobManagerAddresses } from "@/abi/JobManagerAddresses";
+import { JobManagerABI } from "@/abi/JobManagerABI";
+import { getContractByChainId, isContractDeployed } from "@/lib/utils";
+import {
+  Op,
+  RequestStatus,
+  FilterProg,
+  JobParams,
+  JobRequest,
+  JobData,
+  JobManagerActivity,
+} from "@fhevm/shared";
+
+// Types imported from @fhevm/shared
+
+export const useJobManager = (parameters: {
+  instance: FhevmInstance | undefined;
+  fhevmDecryptionSignatureStorage: GenericStringStorage;
+  eip1193Provider: ethers.Eip1193Provider | undefined;
+  chainId: number | undefined;
+  ethersSigner: ethers.JsonRpcSigner | undefined;
+  ethersReadonlyProvider: ethers.ContractRunner | undefined;
+  sameChain: RefObject<(chainId: number | undefined) => boolean>;
+  sameSigner: RefObject<
+    (ethersSigner: ethers.JsonRpcSigner | undefined) => boolean
+  >;
+}) => {
+  const {
+    instance,
+    fhevmDecryptionSignatureStorage,
+    chainId,
+    ethersSigner,
+    ethersReadonlyProvider,
+    sameChain,
+    sameSigner,
+  } = parameters;
+
+  const jobManager = useMemo(() => {
+    const contractInfo = getContractByChainId(
+      chainId,
+      JobManagerABI,
+      JobManagerAddresses,
+      "JobManager"
+    );
+
+    if (!contractInfo.address) {
+      console.warn(`JobManager deployment not found for chainId=${chainId}.`);
+    }
+
+    return contractInfo;
+  }, [chainId]);
+
+  const isDeployed = useMemo(() => {
+    return isContractDeployed(jobManager);
+  }, [jobManager]);
+
+  const getJobManagerActivity = useQuery({
+    queryKey: ["job-manager", "activity", chainId, jobManager.address],
+    queryFn: async (): Promise<JobManagerActivity> => {
+      if (!jobManager.address || !ethersReadonlyProvider) {
+        throw new Error("JobManager contract not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersReadonlyProvider
+      );
+
+      // Get total counts
+      const [nextJobId, nextRequestId] = await Promise.all([
+        contract.nextJobId(),
+        contract.nextRequestId(),
+      ]);
+
+      const totalJobs = Number(nextJobId) - 1;
+      const totalRequests = Number(nextRequestId) - 1;
+
+      // Fetch all requests
+      const requestPromises = Array.from(
+        { length: totalRequests },
+        async (_, i) => {
+          const requestId = BigInt(i + 1);
+          try {
+            const requestResult = await contract.getRequest(requestId);
+
+            // Convert ethers.Result to JobRequest
+            const request: JobRequest = {
+              datasetId: requestResult[0],
+              buyer: requestResult[1],
+              params: {
+                op: Number(requestResult[2][0]),
+                targetField: Number(requestResult[2][1]),
+                weights: requestResult[2][2].map((w: any) => Number(w)),
+                divisor: Number(requestResult[2][3]),
+                clampMin: requestResult[2][4],
+                clampMax: requestResult[2][5],
+                roundBucket: Number(requestResult[2][6]),
+                filter: {
+                  bytecode: requestResult[2][7][0],
+                  consts: requestResult[2][7][1],
+                },
+              },
+              status: Number(requestResult[3]),
+              timestamp: requestResult[4],
+              jobId: requestResult[5],
+              baseFee: requestResult[6],
+              computeAllowance: requestResult[7],
+              gasDebtToSeller: requestResult[8],
+            };
+
+            return request;
+          } catch (error) {
+            console.error(`Failed to fetch request ${requestId}:`, error);
+            return null;
+          }
+        }
+      );
+
+      // Fetch all jobs
+      const jobPromises = Array.from({ length: totalJobs }, async (_, i) => {
+        const jobId = BigInt(i + 1);
+        try {
+          const [buyer, datasetId, isOpen, progress, result] =
+            await Promise.all([
+              contract.jobBuyer(jobId),
+              contract.jobDataset(jobId),
+              contract.jobOpen(jobId),
+              contract.getJobProgress(jobId),
+              contract.getJobResult(jobId).catch(() => null), // Result might not be available
+            ]);
+
+          const jobData: JobData = {
+            id: jobId,
+            buyer,
+            datasetId,
+            isOpen,
+            progress: {
+              totalRows: progress[0],
+              processedRows: progress[1],
+              remainingRows: progress[2],
+            },
+          };
+
+          // Only include result if job is finalized
+          if (result && result[0]) {
+            jobData.result = {
+              isFinalized: result[0],
+              result: result[1],
+              isOverflow: result[2],
+            };
+          }
+
+          return jobData;
+        } catch (error) {
+          console.error(`Failed to fetch job ${jobId}:`, error);
+          return null;
+        }
+      });
+
+      // Wait for all promises and filter out nulls
+      const [requests, jobs] = await Promise.all([
+        Promise.all(requestPromises),
+        Promise.all(jobPromises),
+      ]);
+
+      const filteredRequests = requests.filter(
+        (r): r is JobRequest => r !== null
+      );
+      const filteredJobs = jobs.filter((j): j is JobData => j !== null);
+
+      // Create matched map by datasetId
+      const matched: Record<string, { job?: JobData; request?: JobRequest }> =
+        {};
+
+      // Add jobs to matched map
+      filteredJobs.forEach((job) => {
+        const datasetIdStr = job.datasetId.toString();
+        if (!matched[datasetIdStr]) {
+          matched[datasetIdStr] = {};
+        }
+        matched[datasetIdStr].job = job;
+      });
+
+      // Add requests to matched map
+      filteredRequests.forEach((request) => {
+        const datasetIdStr = request.datasetId.toString();
+        if (!matched[datasetIdStr]) {
+          matched[datasetIdStr] = {};
+        }
+        matched[datasetIdStr].request = request;
+      });
+
+      return {
+        requests: filteredRequests,
+        jobs: filteredJobs,
+        matched,
+      };
+    },
+    enabled: !!jobManager.address && !!ethersReadonlyProvider && isDeployed,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    staleTime: Infinity,
+  });
+
+  return {
+    jobManager,
+    isDeployed,
+    contractAddress: jobManager.address,
+    getJobManagerActivity,
+  };
+};
+
+// All types now imported from @fhevm/shared

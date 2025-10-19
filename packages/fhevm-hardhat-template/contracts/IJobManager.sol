@@ -5,6 +5,19 @@ import {FHE, euint32, externalEuint32, externalEuint8, externalEuint64, euint64,
 import "./IDatasetRegistry.sol";
 
 interface IJobManager {
+    // ---- job struct ----
+    struct Job {
+        JobParams params;
+        address buyer;
+        uint256 datasetId;
+        bool isFinalized;
+        euint256 result;
+        // Cached dataset properties for gas optimization
+        bytes32 merkleRoot;
+        uint256 rowCount;
+        uint32 cooldownSec;
+        euint32 kAnonymity;
+    }
     // ---- enums (v1 ops & fields) ----
     enum Op {
         WEIGHTED_SUM,
@@ -65,7 +78,6 @@ interface IJobManager {
 
     // ---- request views ----
     function getRequest(uint256 requestId) external view returns (JobRequest memory);
-    function getPendingRequestsForDataset(uint256 datasetId) external view returns (uint256[] memory);
     function getJobProgress(uint256 jobId) external view returns (
         uint256 totalRows,
         uint256 processedRows,

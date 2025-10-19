@@ -18,8 +18,8 @@ export default async function RootLayout({
     <html lang="en">
       <body className={`text-foreground antialiased`}>
         <div className="fixed inset-0 w-full h-full z-[-20] min-w-[850px]"></div>
-        <main className="flex flex-col max-w-screen-lg mx-auto pb-20 min-w-[850px]">
-          <nav className="flex w-full px-3 md:px-0 h-fit py-10 justify-between items-center">
+        <main className="flex flex-col lg:max-w-screen-lg mx-auto pb-20 lg:min-w-[850px]">
+          <nav className="flex w-full px-6 h-fit py-8 justify-between items-center">
             <div className="flex items-center gap-1">
               <LuDatabaseZap className="size-10" />
               <span className="text-2xl font-bold">CDM</span>

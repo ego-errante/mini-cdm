@@ -832,54 +832,6 @@ describe("Job Transactions", () => {
   });
 
   describe("View Functions", () => {
-    it("should return pending requests for dataset", async () => {
-      const jobParams1 = createDefaultJobParams();
-      const jobParams2 = createDefaultJobParams();
-      const jobParams3 = createDefaultJobParams();
-      const datasetId = testDataset.id;
-      const buyer1 = signers.bob;
-      const buyer2 = signers.deployer;
-      const seller = signers.alice;
-      const baseFee = ethers.parseEther("0.01");
-      const totalValue = ethers.parseEther("0.1");
-
-      // Submit 3 requests
-      await jobManagerContract.connect(buyer1).submitRequest(datasetId, jobParams1, baseFee, { value: totalValue });
-      await jobManagerContract.connect(buyer1).submitRequest(datasetId, jobParams2, baseFee, { value: totalValue });
-      await jobManagerContract.connect(buyer2).submitRequest(datasetId, jobParams3, baseFee, { value: totalValue });
-
-      // All should be pending (IDs start at 1)
-      let pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
-      expect(pendingRequests.length).to.equal(3);
-      expect(pendingRequests[0]).to.equal(1);
-      expect(pendingRequests[1]).to.equal(2);
-      expect(pendingRequests[2]).to.equal(3);
-
-      // Accept one request
-      await jobManagerContract.connect(seller).acceptRequest(1);
-
-      // Should now only show 2 pending
-      pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
-      expect(pendingRequests.length).to.equal(2);
-      expect(pendingRequests[0]).to.equal(2);
-      expect(pendingRequests[1]).to.equal(3);
-
-      // Reject one request
-      await jobManagerContract.connect(seller).rejectRequest(2);
-
-      // Should now only show 1 pending
-      pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
-      expect(pendingRequests.length).to.equal(1);
-      expect(pendingRequests[0]).to.equal(3);
-    });
-
-    it("should return empty array when no pending requests", async () => {
-      const datasetId = testDataset.id;
-
-      const pendingRequests = await jobManagerContract.getPendingRequestsForDataset(datasetId);
-      expect(pendingRequests.length).to.equal(0);
-    });
-
     it("should return correct nextRequestId", async () => {
       const nextId = await jobManagerContract.nextRequestId();
       expect(nextId).to.equal(1); // Starts at 1
