@@ -602,6 +602,7 @@ describe("DatasetRegistry", function () {
     it("should start with zero datasets", async () => {
       expect(await datasetRegistryContract.getDatasetCount()).to.equal(0);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([]);
+      expect(await datasetRegistryContract.getAllDatasets()).to.deep.equal([]);
     });
 
     it("should track single dataset", async () => {
@@ -624,6 +625,13 @@ describe("DatasetRegistry", function () {
 
       expect(await datasetRegistryContract.getDatasetCount()).to.equal(1);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([datasetId]);
+
+      const allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(1);
+      expect(allDatasets[0].merkleRoot).to.equal(merkleRoot);
+      expect(allDatasets[0].numColumns).to.equal(BigInt(numColumns));
+      expect(allDatasets[0].rowCount).to.equal(BigInt(rowCount));
+      expect(allDatasets[0].exists).to.be.true;
     });
 
     it("should track multiple datasets", async () => {
@@ -653,6 +661,15 @@ describe("DatasetRegistry", function () {
 
       expect(await datasetRegistryContract.getDatasetCount()).to.equal(3);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([1, 2, 3]);
+
+      const allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_2")));
+      expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(allDatasets[0].exists).to.be.true;
+      expect(allDatasets[1].exists).to.be.true;
+      expect(allDatasets[2].exists).to.be.true;
     });
 
     it("should handle dataset deletion correctly", async () => {
@@ -697,6 +714,51 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([]);
     });
 
+    it("should handle pagination correctly", async () => {
+      // Create 5 datasets
+      for (let i = 1; i <= 5; i++) {
+        const rowCount = 1000;
+        const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes(`root_${i}`));
+        const numColumns = 3;
+        const kAnonymity = KAnonymityLevels.NONE;
+        const cooldownSec = 0;
+
+        const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+          datasetRegistryContractAddress,
+          signers.alice,
+          kAnonymity,
+        );
+
+        await datasetRegistryContract
+          .connect(signers.alice)
+          .commitDataset(i, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+      }
+
+      // Test pagination for IDs
+      expect(await datasetRegistryContract.getDatasetIds(0, 2)).to.deep.equal([1, 2]);
+      expect(await datasetRegistryContract.getDatasetIds(2, 2)).to.deep.equal([3, 4]);
+      expect(await datasetRegistryContract.getDatasetIds(4, 2)).to.deep.equal([5]);
+      expect(await datasetRegistryContract.getDatasetIds(5, 2)).to.deep.equal([]); // Beyond array
+      expect(await datasetRegistryContract.getDatasetIds(0, 10)).to.deep.equal([1, 2, 3, 4, 5]); // Request more than available
+
+      // Test pagination for datasets
+      const page1 = await datasetRegistryContract.getDatasets(0, 2);
+      expect(page1).to.have.length(2);
+      expect(page1[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(page1[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_2")));
+
+      const page2 = await datasetRegistryContract.getDatasets(2, 2);
+      expect(page2).to.have.length(2);
+      expect(page2[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(page2[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
+
+      const page3 = await datasetRegistryContract.getDatasets(4, 2);
+      expect(page3).to.have.length(1);
+      expect(page3[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
+
+      expect(await datasetRegistryContract.getDatasets(5, 2)).to.deep.equal([]); // Beyond array
+    });
+
     it("should handle non-sequential dataset IDs", async () => {
       const datasetIds = [5, 10, 100, 42];
 
@@ -720,6 +782,13 @@ describe("DatasetRegistry", function () {
 
       expect(await datasetRegistryContract.getDatasetCount()).to.equal(4);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([5, 10, 100, 42]);
+
+      const allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(4);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_10")));
+      expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_100")));
+      expect(allDatasets[3].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_42")));
     });
 
     it("should maintain enumeration after multiple operations", async () => {
@@ -745,6 +814,10 @@ describe("DatasetRegistry", function () {
       // Delete dataset 2
       await datasetRegistryContract.connect(signers.alice).deleteDataset(2);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([1, 3]);
+      let allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(2);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
 
       // Create dataset 4
       const { handle: encryptedKAnonymity4, inputProof: inputProof4 } = await encryptKAnonymity(
@@ -765,10 +838,19 @@ describe("DatasetRegistry", function () {
         );
 
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([1, 3, 4]);
+      allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
 
       // Delete dataset 1 (first element)
       await datasetRegistryContract.connect(signers.alice).deleteDataset(1);
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([4, 3]);
+      allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(2);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
 
       // Create dataset 5
       const { handle: encryptedKAnonymity5, inputProof: inputProof5 } = await encryptKAnonymity(
@@ -789,6 +871,11 @@ describe("DatasetRegistry", function () {
         );
 
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([4, 3, 5]);
+      allDatasets = await datasetRegistryContract.getAllDatasets();
+      expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
+      expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
     });
   });
 });

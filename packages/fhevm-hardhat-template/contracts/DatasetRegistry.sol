@@ -117,6 +117,43 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         return _datasetIds;
     }
 
+    function getAllDatasets() external view returns (Dataset[] memory) {
+        uint256 count = _datasetIds.length;
+        Dataset[] memory datasets = new Dataset[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            datasets[i] = _datasets[_datasetIds[i]];
+        }
+
+        return datasets;
+    }
+
+    function getDatasets(uint256 offset, uint256 limit)
+        external
+        view
+        returns (Dataset[] memory)
+    {
+        uint256 total = _datasetIds.length;
+        if (offset >= total) {
+            return new Dataset[](0);
+        }
+
+        uint256 end = offset + limit;
+        if (end > total) {
+            end = total;
+        }
+
+        uint256 length = end - offset;
+        Dataset[] memory datasets = new Dataset[](length);
+
+        for (uint256 i = 0; i < length; i++) {
+            uint256 datasetId = _datasetIds[offset + i];
+            datasets[i] = _datasets[datasetId];
+        }
+
+        return datasets;
+    }
+
     // ---- lifecycle ----
     function commitDataset(
         uint256 datasetId,
