@@ -114,8 +114,37 @@ export const useDatasetRegistry = (parameters: {
       const receipt = await tx.wait();
       return receipt;
     },
+    onSuccess: () => {
+      // Refetch datasets after successful commit
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    },
     onError: (error) => {
       console.error("Dataset commit failed:", error);
+    },
+  });
+
+  const deleteDatasetMutation = useMutation({
+    mutationFn: async (datasetId: bigint) => {
+      if (!datasetRegistry.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        datasetRegistry.address,
+        datasetRegistry.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.deleteDataset(datasetId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      // Refetch datasets after successful deletion
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    },
+    onError: (error) => {
+      console.error("Dataset deletion failed:", error);
     },
   });
 
@@ -163,6 +192,7 @@ export const useDatasetRegistry = (parameters: {
     isDeployed,
     contractAddress: datasetRegistry.address,
     commitDatasetMutation,
+    deleteDatasetMutation,
     getDatasetsQuery,
   };
 };

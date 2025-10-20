@@ -1,7 +1,7 @@
 import { type FhevmInstance, type GenericStringStorage } from "@fhevm/react";
 import { ethers } from "ethers";
 import { RefObject, useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { JobManagerAddresses } from "@/abi/JobManagerAddresses";
 import { JobManagerABI } from "@/abi/JobManagerABI";
@@ -39,6 +39,8 @@ export const useJobManager = (parameters: {
     sameChain,
     sameSigner,
   } = parameters;
+
+  const queryClient = useQueryClient();
 
   const jobManager = useMemo(() => {
     const contractInfo = getContractByChainId(
@@ -209,11 +211,167 @@ export const useJobManager = (parameters: {
     staleTime: Infinity,
   });
 
+  // Mutations
+  const submitRequestMutation = useMutation({
+    mutationFn: async (params: {
+      datasetId: bigint;
+      baseFee: bigint;
+      computeAllowance: bigint;
+      jobParams: JobParams;
+    }) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const totalValue = params.baseFee + params.computeAllowance;
+      const tx = await contract.submitRequest(
+        params.datasetId,
+        params.jobParams,
+        params.baseFee,
+        { value: totalValue }
+      );
+
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const acceptRequestMutation = useMutation({
+    mutationFn: async (requestId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.acceptRequest(requestId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const rejectRequestMutation = useMutation({
+    mutationFn: async (requestId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.rejectRequest(requestId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const cancelRequestMutation = useMutation({
+    mutationFn: async (requestId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.cancelRequest(requestId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const pushRowMutation = useMutation({
+    mutationFn: async (params: {
+      jobId: bigint;
+      rowData: string;
+      merkleProof: string[];
+      rowIndex: number;
+    }) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.pushRow(
+        params.jobId,
+        params.rowData,
+        params.merkleProof,
+        params.rowIndex
+      );
+
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const finalizeJobMutation = useMutation({
+    mutationFn: async (jobId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.finalize(jobId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
   return {
     jobManager,
     isDeployed,
     contractAddress: jobManager.address,
     getJobManagerActivity,
+    submitRequestMutation,
+    acceptRequestMutation,
+    rejectRequestMutation,
+    cancelRequestMutation,
+    pushRowMutation,
+    finalizeJobMutation,
   };
 };
 

@@ -16,3 +16,9 @@ export * from "./encryption";
 
 // Export merkle tree utilities
 export * from "./merkle";
+
+// Export filter DSL utilities
+export * from "./filterDsl";
+
+// Export job utilities
+export * from "./jobUtils";

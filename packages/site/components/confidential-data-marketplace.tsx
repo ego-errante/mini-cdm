@@ -1,67 +1,84 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { StatusBadgesPopover } from "@/components/StatusBadgesPopover";
-import { StatusBadgeProps } from "@/components/StatusBadgeTypes";
 import { Button } from "./ui/button";
 import { CreateDatasetModal } from "@/components/CreateDatasetModal";
+import { DatasetCard } from "@/components/DatasetCard";
+import { DatasetDrawer } from "@/components/DatasetDrawer";
 import { useCDMContext } from "@/hooks/useCDMContext";
-
-// Mock data for demonstration purposes
-// Alternative mock states for testing different scenarios:
-
-// Loading state example:
-// const mockStatusBadgeProps: StatusBadgeProps = {
-//   chainId: 9000,
-//   accounts: ["0x1234567890123456789012345678901234567890"],
-//   ethersSigner: undefined,
-//   contractAddress: "0xAbCdEf1234567890aBcDeF1234567890AbCdEf12",
-//   isDeployed: true,
-//   fhevmInstance: undefined,
-//   fhevmStatus: "loading",
-//   fhevmError: null,
-// };
-
-// Error state example:
-// const mockStatusBadgeProps: StatusBadgeProps = {
-//   chainId: undefined,
-//   accounts: undefined,
-//   ethersSigner: undefined,
-//   contractAddress: undefined,
-//   isDeployed: false,
-//   fhevmInstance: undefined,
-//   fhevmStatus: "error",
-//   fhevmError: new Error("Failed to initialize FHEVM instance"),
-// };
-
-const mockStatusBadgeProps: StatusBadgeProps = {
-  chainId: 9000, // Mock local chain ID
-  accounts: [
-    "0x1234567890123456789012345678901234567890",
-    "0x0987654321098765432109876543210987654321",
-  ],
-  ethersSigner: undefined, // Mock signer - in real app, this would be from useMetaMaskEthersSigner
-  contracts: [
-    {
-      name: "JobManager",
-      address: "0xAbCdEf1234567890aBcDeF1234567890AbCdEf12",
-      isDeployed: true,
-    },
-  ],
-  fhevmInstance: {} as any, // Mock FHEVM instance - in real app, this would be from useFhevm
-  fhevmStatus: "ready", // Can be: "loading", "ready", "error"
-  fhevmError: null,
-};
+import {
+  getDatasetJobCount,
+  getDatasetRequestCount,
+  userHasRequestForDataset,
+  isDatasetOwner as checkIsDatasetOwner,
+  getDatasetActivity,
+} from "@/lib/datasetHelpers";
 
 export default function ConfidentialDataMarketplace() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [selectedDatasetId, setSelectedDatasetId] = useState<bigint | null>(
+    null
+  );
 
-  const { chainId, isConnected, connect, datasetRegistry } = useCDMContext();
+  const {
+    chainId,
+    isConnected,
+    connect,
+    datasetRegistry,
+    jobManager,
+    accounts,
+    ethersSigner,
+    fhevmInstance,
+    fhevmStatus,
+    fhevmError,
+  } = useCDMContext();
 
-  const handleDatasetCreated = () => {
-    // Refresh dataset list or show success message
-    console.log("Dataset created successfully!");
-  };
+  const { getDatasetsQuery } = datasetRegistry;
+  const { getJobManagerActivity } = jobManager;
+
+  const datasets = getDatasetsQuery.data || [];
+  const activity = getJobManagerActivity.data;
+  const currentUserAddress = accounts?.[0];
+
+  // Reverse dataset order (newest first)
+  const reversedDatasets = [...datasets].reverse();
+
+  // Compute dataset stats once using useMemo
+  const datasetStats = useMemo(() => {
+    if (!activity) return new Map();
+
+    const statsMap = new Map<
+      bigint,
+      {
+        jobCount: number;
+        requestCount: number;
+        hasUserRequest: boolean;
+      }
+    >();
+
+    datasets.forEach((dataset) => {
+      const jobCount = getDatasetJobCount(dataset.id, activity.jobs);
+      const requestCount = getDatasetRequestCount(
+        dataset.id,
+        activity.requests
+      );
+      const hasUserRequest = userHasRequestForDataset(
+        dataset.id,
+        activity.requests,
+        currentUserAddress
+      );
+
+      statsMap.set(dataset.id, { jobCount, requestCount, hasUserRequest });
+    });
+
+    return statsMap;
+  }, [activity, datasets, currentUserAddress]);
+
+  // Find selected dataset
+  const selectedDataset = selectedDatasetId
+    ? datasets.find((d) => d.id === selectedDatasetId)
+    : null;
 
   if (!isConnected) {
     return (
@@ -80,16 +97,24 @@ export default function ConfidentialDataMarketplace() {
 
   return (
     <div className="flex flex-col gap-8 items-center sm:items-start w-full px-3 md:px-0">
-      {/* <FHECounterDemo /> */}
       <StatusBadgesPopover
         className="absolute top-10 right-6"
-        {...mockStatusBadgeProps}
         chainId={chainId}
+        accounts={accounts}
+        ethersSigner={ethersSigner}
+        fhevmInstance={fhevmInstance}
+        fhevmStatus={fhevmStatus}
+        fhevmError={fhevmError || null}
         contracts={[
           {
-            name: "datasetRegistry",
+            name: "DatasetRegistry",
             address: datasetRegistry.contractAddress,
             isDeployed: datasetRegistry.isDeployed,
+          },
+          {
+            name: "JobManager",
+            address: jobManager.contractAddress,
+            isDeployed: jobManager.isDeployed,
           },
         ]}
       />
@@ -101,10 +126,59 @@ export default function ConfidentialDataMarketplace() {
         </Button>
       </div>
 
+      {/* Dataset Grid */}
+      {getDatasetsQuery.isLoading ? (
+        <div className="text-center py-12 text-muted-foreground">
+          Loading datasets...
+        </div>
+      ) : datasets.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          No datasets yet. Create one to get started!
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 w-full">
+          {reversedDatasets.map((dataset) => {
+            const stats = datasetStats.get(dataset.id) || {
+              jobCount: 0,
+              requestCount: 0,
+              hasUserRequest: false,
+            };
+
+            return (
+              <DatasetCard
+                key={dataset.id.toString()}
+                id={dataset.id}
+                owner={dataset.owner}
+                rowCount={dataset.rowCount}
+                numColumns={dataset.numColumns}
+                jobCount={stats.jobCount}
+                requestCount={stats.requestCount}
+                hasUserRequest={stats.hasUserRequest}
+                onClick={() => setSelectedDatasetId(dataset.id)}
+              />
+            );
+          })}
+        </div>
+      )}
+
+      {/* Dataset Drawer */}
+      {selectedDataset && activity && (
+        <DatasetDrawer
+          open={!!selectedDatasetId}
+          onOpenChange={(open) => !open && setSelectedDatasetId(null)}
+          dataset={selectedDataset}
+          activity={getDatasetActivity(selectedDataset.id, activity)}
+          isOwner={checkIsDatasetOwner(
+            selectedDataset.owner,
+            currentUserAddress
+          )}
+          currentUserAddress={currentUserAddress}
+        />
+      )}
+
       <CreateDatasetModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
-        onSuccess={handleDatasetCreated}
       />
     </div>
   );
