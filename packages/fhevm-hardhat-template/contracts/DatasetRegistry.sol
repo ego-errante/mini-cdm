@@ -29,6 +29,17 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         uint32 cooldownSec;
     }
 
+    struct DatasetWithId {
+        uint256 id;
+        bytes32 merkleRoot;
+        uint256 numColumns;
+        uint256 rowCount;
+        address owner;
+        bool exists;
+        euint32 kAnonymity;
+        uint32 cooldownSec;
+    }
+
     // ---- views ----
     function getDataset(uint256 datasetId)
         external
@@ -117,12 +128,23 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         return _datasetIds;
     }
 
-    function getAllDatasets() external view returns (Dataset[] memory) {
+    function getAllDatasets() external view returns (DatasetWithId[] memory) {
         uint256 count = _datasetIds.length;
-        Dataset[] memory datasets = new Dataset[](count);
+        DatasetWithId[] memory datasets = new DatasetWithId[](count);
 
         for (uint256 i = 0; i < count; i++) {
-            datasets[i] = _datasets[_datasetIds[i]];
+            uint256 datasetId = _datasetIds[i];
+            Dataset memory dataset = _datasets[datasetId];
+            datasets[i] = DatasetWithId({
+                id: datasetId,
+                merkleRoot: dataset.merkleRoot,
+                numColumns: dataset.numColumns,
+                rowCount: dataset.rowCount,
+                owner: dataset.owner,
+                exists: dataset.exists,
+                kAnonymity: dataset.kAnonymity,
+                cooldownSec: dataset.cooldownSec
+            });
         }
 
         return datasets;
@@ -131,11 +153,11 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
     function getDatasets(uint256 offset, uint256 limit)
         external
         view
-        returns (Dataset[] memory)
+        returns (DatasetWithId[] memory)
     {
         uint256 total = _datasetIds.length;
         if (offset >= total) {
-            return new Dataset[](0);
+            return new DatasetWithId[](0);
         }
 
         uint256 end = offset + limit;
@@ -144,11 +166,21 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
         }
 
         uint256 length = end - offset;
-        Dataset[] memory datasets = new Dataset[](length);
+        DatasetWithId[] memory datasets = new DatasetWithId[](length);
 
         for (uint256 i = 0; i < length; i++) {
             uint256 datasetId = _datasetIds[offset + i];
-            datasets[i] = _datasets[datasetId];
+            Dataset memory dataset = _datasets[datasetId];
+            datasets[i] = DatasetWithId({
+                id: datasetId,
+                merkleRoot: dataset.merkleRoot,
+                numColumns: dataset.numColumns,
+                rowCount: dataset.rowCount,
+                owner: dataset.owner,
+                exists: dataset.exists,
+                kAnonymity: dataset.kAnonymity,
+                cooldownSec: dataset.cooldownSec
+            });
         }
 
         return datasets;

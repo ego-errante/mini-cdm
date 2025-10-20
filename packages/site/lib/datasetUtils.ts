@@ -108,22 +108,6 @@ export async function processDatasetFile(file: File): Promise<ParsedDataset> {
   };
 }
 
-export const KAnonymityLevels = {
-  NONE: 0,
-  MINIMAL: 3,
-  STANDARD: 5,
-  HIGH: 10,
-  MAXIMUM: 50,
-} as const;
-
-export const KAnonymityOptions = [
-  { value: KAnonymityLevels.NONE, label: "None (0)" },
-  { value: KAnonymityLevels.MINIMAL, label: "Minimal (3)" },
-  { value: KAnonymityLevels.STANDARD, label: "Standard (5)" },
-  { value: KAnonymityLevels.HIGH, label: "High (10)" },
-  { value: KAnonymityLevels.MAXIMUM, label: "Maximum (50)" },
-];
-
 /**
  * LocalStorage utilities for encrypted datasets
  */

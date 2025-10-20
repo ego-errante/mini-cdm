@@ -9,7 +9,18 @@ import { RefObject, useMemo } from "react";
 import { DatasetRegistryAddresses } from "@/abi/DatasetRegistryAddresses";
 import { DatasetRegistryABI } from "@/abi/DatasetRegistryABI";
 import { getContractByChainId, isContractDeployed } from "@/lib/utils";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+
+export type DatasetObject = {
+  id: bigint;
+  merkleRoot: string;
+  numColumns: number;
+  rowCount: number;
+  owner: string;
+  exists: boolean;
+  kAnonymity: number;
+  cooldownSec: number;
+};
 
 export const useDatasetRegistry = (parameters: {
   instance: FhevmInstance | undefined;
@@ -32,6 +43,8 @@ export const useDatasetRegistry = (parameters: {
     sameChain,
     sameSigner,
   } = parameters;
+
+  const queryClient = useQueryClient();
 
   const datasetRegistry = useMemo(() => {
     const contractInfo = getContractByChainId(
@@ -56,7 +69,7 @@ export const useDatasetRegistry = (parameters: {
 
   const commitDatasetMutation = useMutation({
     mutationFn: async (params: {
-      datasetId: number;
+      datasetId: bigint;
       rowCount: number;
       merkleRoot: string;
       numColumns: number;
@@ -106,9 +119,50 @@ export const useDatasetRegistry = (parameters: {
     },
   });
 
+  const getDatasetsQuery = useQuery({
+    queryKey: ["datasets", datasetRegistry.address],
+    queryFn: async (): Promise<DatasetObject[]> => {
+      if (!datasetRegistry.address || !ethersReadonlyProvider) {
+        throw new Error("Contract or provider not available");
+      }
+
+      const contract = new ethers.Contract(
+        datasetRegistry.address,
+        datasetRegistry.abi,
+        ethersReadonlyProvider
+      );
+
+      // Get all datasets at once
+      const contractDatasets = await contract.getAllDatasets();
+
+      // Convert contract DatasetWithId[] to DatasetObject[]
+      const datasets: DatasetObject[] = contractDatasets.map(
+        (dataset: any) => ({
+          id: BigInt(dataset.id),
+          merkleRoot: dataset.merkleRoot,
+          numColumns: Number(dataset.numColumns),
+          rowCount: Number(dataset.rowCount),
+          owner: dataset.owner,
+          exists: dataset.exists,
+          kAnonymity: Number(dataset.kAnonymity),
+          cooldownSec: Number(dataset.cooldownSec),
+        })
+      );
+
+      return datasets;
+    },
+    enabled: !!datasetRegistry.address && !!ethersReadonlyProvider,
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
+    refetchOnReconnect: false,
+    staleTime: Infinity,
+  });
+
   return {
     datasetRegistry,
     isDeployed,
     contractAddress: datasetRegistry.address,
+    commitDatasetMutation,
+    getDatasetsQuery,
   };
 };

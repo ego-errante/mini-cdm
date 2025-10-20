@@ -628,6 +628,7 @@ describe("DatasetRegistry", function () {
 
       const allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(1);
+      expect(allDatasets[0].id).to.equal(datasetId);
       expect(allDatasets[0].merkleRoot).to.equal(merkleRoot);
       expect(allDatasets[0].numColumns).to.equal(BigInt(numColumns));
       expect(allDatasets[0].rowCount).to.equal(BigInt(rowCount));
@@ -664,8 +665,11 @@ describe("DatasetRegistry", function () {
 
       const allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].id).to.equal(1);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].id).to.equal(2);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_2")));
+      expect(allDatasets[2].id).to.equal(3);
       expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
       expect(allDatasets[0].exists).to.be.true;
       expect(allDatasets[1].exists).to.be.true;
@@ -744,16 +748,21 @@ describe("DatasetRegistry", function () {
       // Test pagination for datasets
       const page1 = await datasetRegistryContract.getDatasets(0, 2);
       expect(page1).to.have.length(2);
+      expect(page1[0].id).to.equal(1);
       expect(page1[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(page1[1].id).to.equal(2);
       expect(page1[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_2")));
 
       const page2 = await datasetRegistryContract.getDatasets(2, 2);
       expect(page2).to.have.length(2);
+      expect(page2[0].id).to.equal(3);
       expect(page2[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(page2[1].id).to.equal(4);
       expect(page2[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
 
       const page3 = await datasetRegistryContract.getDatasets(4, 2);
       expect(page3).to.have.length(1);
+      expect(page3[0].id).to.equal(5);
       expect(page3[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
 
       expect(await datasetRegistryContract.getDatasets(5, 2)).to.deep.equal([]); // Beyond array
@@ -785,9 +794,13 @@ describe("DatasetRegistry", function () {
 
       const allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(4);
+      expect(allDatasets[0].id).to.equal(5);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
+      expect(allDatasets[1].id).to.equal(10);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_10")));
+      expect(allDatasets[2].id).to.equal(100);
       expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_100")));
+      expect(allDatasets[3].id).to.equal(42);
       expect(allDatasets[3].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_42")));
     });
 
@@ -816,7 +829,9 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([1, 3]);
       let allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(2);
+      expect(allDatasets[0].id).to.equal(1);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].id).to.equal(3);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
 
       // Create dataset 4
@@ -840,8 +855,11 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([1, 3, 4]);
       allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].id).to.equal(1);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_1")));
+      expect(allDatasets[1].id).to.equal(3);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(allDatasets[2].id).to.equal(4);
       expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
 
       // Delete dataset 1 (first element)
@@ -849,7 +867,9 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([4, 3]);
       allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(2);
+      expect(allDatasets[0].id).to.equal(4);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
+      expect(allDatasets[1].id).to.equal(3);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
 
       // Create dataset 5
@@ -873,8 +893,11 @@ describe("DatasetRegistry", function () {
       expect(await datasetRegistryContract.getAllDatasetIds()).to.deep.equal([4, 3, 5]);
       allDatasets = await datasetRegistryContract.getAllDatasets();
       expect(allDatasets).to.have.length(3);
+      expect(allDatasets[0].id).to.equal(4);
       expect(allDatasets[0].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_4")));
+      expect(allDatasets[1].id).to.equal(3);
       expect(allDatasets[1].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_3")));
+      expect(allDatasets[2].id).to.equal(5);
       expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
     });
   });

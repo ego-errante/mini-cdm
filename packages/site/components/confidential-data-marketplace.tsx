@@ -1,16 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { useMetaMaskEthersSigner } from "@/hooks/metamask/useMetaMaskEthersSigner";
-import { useInMemoryStorage } from "@/hooks/useInMemoryStorage";
-import { useFhevm } from "@fhevm/react";
-
 import { StatusBadgesPopover } from "@/components/StatusBadgesPopover";
 import { StatusBadgeProps } from "@/components/StatusBadgeTypes";
 import { Button } from "./ui/button";
-import { useJobManager } from "@/hooks/useJobManager";
-import { useDatasetRegistry } from "@/hooks/useDatasetRegistry";
 import { CreateDatasetModal } from "@/components/CreateDatasetModal";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 // Mock data for demonstration purposes
 // Alternative mock states for testing different scenarios:
@@ -60,52 +55,8 @@ const mockStatusBadgeProps: StatusBadgeProps = {
 
 export default function ConfidentialDataMarketplace() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const { storage: fhevmDecryptionSignatureStorage } = useInMemoryStorage();
-  const {
-    provider,
-    chainId,
-    accounts,
-    isConnected,
-    connect,
-    ethersSigner,
-    ethersReadonlyProvider,
-    sameChain,
-    sameSigner,
-    initialMockChains,
-  } = useMetaMaskEthersSigner();
 
-  const {
-    instance: fhevmInstance,
-    status: fhevmStatus,
-    error: fhevmError,
-  } = useFhevm({
-    provider,
-    chainId,
-    initialMockChains,
-    enabled: true, // use enabled to dynamically create the instance on-demand
-  });
-
-  const jobManager = useJobManager({
-    instance: fhevmInstance,
-    fhevmDecryptionSignatureStorage,
-    eip1193Provider: provider,
-    chainId,
-    ethersSigner,
-    ethersReadonlyProvider,
-    sameChain,
-    sameSigner,
-  });
-
-  const datasetRegistry = useDatasetRegistry({
-    instance: fhevmInstance,
-    fhevmDecryptionSignatureStorage,
-    eip1193Provider: provider,
-    chainId,
-    ethersSigner,
-    ethersReadonlyProvider,
-    sameChain,
-    sameSigner,
-  });
+  const { chainId, isConnected, connect, datasetRegistry } = useCDMContext();
 
   const handleDatasetCreated = () => {
     // Refresh dataset list or show success message
@@ -153,10 +104,6 @@ export default function ConfidentialDataMarketplace() {
       <CreateDatasetModal
         open={isCreateModalOpen}
         onOpenChange={setIsCreateModalOpen}
-        contractAddress={datasetRegistry.contractAddress}
-        fhevmInstance={fhevmInstance}
-        ethersSigner={ethersSigner}
-        contractAbi={datasetRegistry.datasetRegistry.abi}
         onSuccess={handleDatasetCreated}
       />
     </div>

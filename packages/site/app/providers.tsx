@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MetaMaskProvider } from "@/hooks/metamask/useMetaMaskProvider";
 import { InMemoryStorageProvider } from "@/hooks/useInMemoryStorage";
 import { MetaMaskEthersSignerProvider } from "@/hooks/metamask/useMetaMaskEthersSigner";
+import { CDMProvider } from "@/hooks/useCDMContext";
 import { Toaster } from "sonner";
 
 // Create a client
@@ -30,7 +31,9 @@ export function Providers({ children }: Props) {
         <MetaMaskEthersSignerProvider
           initialMockChains={{ 31337: "http://localhost:8545" }}
         >
-          <InMemoryStorageProvider>{children}</InMemoryStorageProvider>
+          <InMemoryStorageProvider>
+            <CDMProvider>{children}</CDMProvider>
+          </InMemoryStorageProvider>
         </MetaMaskEthersSignerProvider>
       </MetaMaskProvider>
     </QueryClientProvider>

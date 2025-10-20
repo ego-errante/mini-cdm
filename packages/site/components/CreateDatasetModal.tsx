@@ -30,7 +30,6 @@ import {
 } from "@/components/ui/form";
 import {
   processDatasetFile,
-  KAnonymityLevels,
   saveEncryptedDatasetToStorage,
   type ParsedDataset,
 } from "@/lib/datasetUtils";
@@ -42,14 +41,12 @@ import {
   type EncryptedDataset,
 } from "@fhevm/shared";
 import { uuidToUint256 } from "@/lib/utils";
+import { useQueryClient } from "@tanstack/react-query";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface CreateDatasetModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  contractAddress: string | undefined;
-  fhevmInstance: FhevmInstance | undefined;
-  ethersSigner: ethers.JsonRpcSigner | undefined;
-  contractAbi: readonly any[];
   onSuccess?: () => void;
 }
 
@@ -61,29 +58,23 @@ interface DatasetFormValues {
 export function CreateDatasetModal({
   open,
   onOpenChange,
-  contractAddress,
-  fhevmInstance,
-  ethersSigner,
-  contractAbi,
   onSuccess,
 }: CreateDatasetModalProps) {
   // Initialize form
   const form = useForm<DatasetFormValues>({
     defaultValues: {
-      kAnonymity: KAnonymityLevels.NONE,
+      kAnonymity: 0,
       cooldownSec: 0,
     },
   });
 
-  // File parsing state
-  const [file, setFile] = useState<File | null>(null);
-  const [parsedDataset, setParsedDataset] = useState<ParsedDataset | null>(
-    null
-  );
-  const [isProcessing, setIsProcessing] = useState(false);
+  // Hooks
+  const queryClient = useQueryClient();
+  const { datasetRegistry, fhevmInstance, ethersSigner } = useCDMContext();
+  const { commitDatasetMutation, getDatasetsQuery, contractAddress } =
+    datasetRegistry;
 
   // Encryption state
-  const [datasetId, setDatasetId] = useState<string>("");
   const [encryptionProgress, setEncryptionProgress] = useState({
     current: 0,
     total: 0,
@@ -93,37 +84,39 @@ export function CreateDatasetModal({
   // Error state
   const [error, setError] = useState<string | null>(null);
 
-  // File upload handler
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const selectedFile = e.target.files?.[0];
-    if (!selectedFile) {
-      setFile(null);
-      setParsedDataset(null);
-      return;
-    }
-
-    setFile(selectedFile);
-    setIsProcessing(true);
-
-    try {
-      const parsed = await processDatasetFile(selectedFile);
-      setParsedDataset(parsed);
-    } catch (err) {
+  // File processing mutation
+  const processFileMutation = useMutation({
+    mutationFn: async (file: File) => {
+      return await processDatasetFile(file);
+    },
+    onError: (err) => {
       console.error("File processing error:", err);
       toast.error(
         err instanceof Error ? err.message : "Failed to process file"
       );
-      setParsedDataset(null);
-    } finally {
-      setIsProcessing(false);
+    },
+  });
+
+  // File upload handler
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selectedFile = e.target.files?.[0];
+    if (!selectedFile) {
+      return;
     }
+
+    // Clear previous encryption data when selecting a new file
+    encryptDatasetMutation.reset();
+    setDataOwnershipConfirmed(false);
+    setEncryptionProgress({ current: 0, total: 0 });
+
+    processFileMutation.mutate(selectedFile);
   };
 
   // Encryption mutation
   const encryptDatasetMutation = useMutation({
     mutationFn: async () => {
       if (
-        !parsedDataset ||
+        !processFileMutation.data ||
         !fhevmInstance ||
         !contractAddress ||
         !ethersSigner
@@ -134,14 +127,13 @@ export function CreateDatasetModal({
       // Generate dataset ID
       const uuid = crypto.randomUUID();
       const id = uuidToUint256(uuid);
-      setDatasetId(id.toString());
 
       const encryptedRows: EncryptedRow[] = [];
       const userAddress = await ethersSigner.getAddress();
 
       // Encrypt each row progressively. Skip the header row.
-      for (let i = 1; i < parsedDataset.rows.length; i++) {
-        const rowData = parsedDataset.rows[i];
+      for (let i = 1; i < processFileMutation.data.rows.length; i++) {
+        const rowData = processFileMutation.data.rows[i];
         const columnConfigs = parseRowToColumnConfigs(rowData);
 
         const encryptedData = await createPackedEncryptedRow(
@@ -156,7 +148,7 @@ export function CreateDatasetModal({
         // Update progress
         setEncryptionProgress({
           current: i + 1,
-          total: parsedDataset.rows.length,
+          total: processFileMutation.data.rows.length,
         });
       }
 
@@ -167,8 +159,8 @@ export function CreateDatasetModal({
       const encryptedDataset: EncryptedDataset = {
         datasetId: id.toString(),
         rows: encryptedRows,
-        numColumns: parsedDataset.numColumns,
-        rowCount: parsedDataset.rowCount,
+        numColumns: processFileMutation.data.numColumns,
+        rowCount: processFileMutation.data.rowCount,
         merkleRoot: root,
       };
 
@@ -197,16 +189,48 @@ export function CreateDatasetModal({
     URL.revokeObjectURL(url);
   };
 
-  // Submit handler (stubbed out)
+  // Submit handler
   const handleSubmit = async (values: DatasetFormValues) => {
-    // TODO: Implement onchain submission
-    console.log("Submit disabled for now", {
-      datasetId: encryptDatasetMutation.data?.datasetId,
-      merkleRoot: encryptDatasetMutation.data?.merkleRoot,
-      encryptedRows: encryptDatasetMutation.data?.rows.length ?? 0,
-      kAnonymity: values.kAnonymity,
-      cooldownSec: values.cooldownSec,
-    });
+    if (!encryptDatasetMutation.data) {
+      toast.error("No encrypted dataset available");
+      return;
+    }
+
+    try {
+      await commitDatasetMutation.mutateAsync({
+        datasetId: BigInt(encryptDatasetMutation.data.datasetId),
+        rowCount: encryptDatasetMutation.data.rowCount,
+        merkleRoot: encryptDatasetMutation.data.merkleRoot,
+        numColumns: encryptDatasetMutation.data.numColumns,
+        kAnonymity: values.kAnonymity,
+        cooldownSec: values.cooldownSec,
+      });
+
+      // Invalidate and refetch datasets query
+      await queryClient.invalidateQueries({
+        queryKey: ["datasets"],
+      });
+
+      // Clear form
+      form.reset();
+      setEncryptionProgress({ current: 0, total: 0 });
+      setDataOwnershipConfirmed(false);
+
+      // Clear mutation data
+      encryptDatasetMutation.reset();
+      processFileMutation.reset();
+
+      // Close modal and call success callback
+      onOpenChange(false);
+      onSuccess?.();
+
+      toast.success("Dataset created successfully!");
+    } catch (error) {
+      console.error("Failed to create dataset:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to create dataset"
+      );
+    }
   };
 
   // Validation
@@ -239,9 +263,12 @@ export function CreateDatasetModal({
                   type="file"
                   accept=".csv,.json"
                   onChange={handleFileChange}
-                  disabled={isProcessing || encryptDatasetMutation.isPending}
+                  disabled={
+                    processFileMutation.isPending ||
+                    encryptDatasetMutation.isPending
+                  }
                 />
-                {isProcessing && (
+                {processFileMutation.isPending && (
                   <p className="text-sm text-muted-foreground">
                     Processing file...
                   </p>
@@ -249,13 +276,13 @@ export function CreateDatasetModal({
               </div>
 
               {/* Display parsed data info */}
-              {parsedDataset && (
+              {processFileMutation.data && (
                 <>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="grid gap-2">
                       <Label>Rows</Label>
                       <Input
-                        value={parsedDataset.rowCount}
+                        value={processFileMutation.data.rowCount}
                         readOnly
                         className="bg-muted"
                       />
@@ -263,7 +290,7 @@ export function CreateDatasetModal({
                     <div className="grid gap-2">
                       <Label>Columns</Label>
                       <Input
-                        value={parsedDataset.numColumns}
+                        value={processFileMutation.data.numColumns}
                         readOnly
                         className="bg-muted"
                       />
@@ -327,6 +354,7 @@ export function CreateDatasetModal({
                   {/* Section 3: Encryption & Processing */}
                   {!(encryptDatasetMutation.data?.rows.length ?? 0) && (
                     <Button
+                      type="button"
                       onClick={() => encryptDatasetMutation.mutate()}
                       disabled={
                         encryptDatasetMutation.isPending ||
@@ -362,14 +390,14 @@ export function CreateDatasetModal({
                   )}
 
                   {/* Dataset ID (shown after encryption starts) */}
-                  {datasetId && (
+                  {encryptDatasetMutation.data?.datasetId && (
                     <div className="grid gap-2">
                       <Label htmlFor="datasetId">
                         Dataset ID (auto-generated)
                       </Label>
                       <Input
                         id="datasetId"
-                        value={datasetId}
+                        value={encryptDatasetMutation.data.datasetId}
                         readOnly
                         className="bg-muted font-mono text-xs"
                       />
