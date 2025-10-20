@@ -2,6 +2,8 @@
  * Job utility functions for gas estimation and allowance calculation
  */
 
+import { OpName } from "./constants";
+
 /**
  * Estimates gas cost for a JobManager job based on parameters
  *
@@ -17,7 +19,7 @@
 export function estimateJobGas(
   rows: number,
   columns: number,
-  operation: "COUNT" | "SUM" | "AVG_P" | "WEIGHTED_SUM" | "MIN" | "MAX",
+  operation: OpName,
   filterBytes: number
 ): bigint {
   // Log-scale linear model
@@ -59,7 +61,7 @@ export function estimateJobGas(
 export function estimateJobAllowance(
   rows: number,
   columns: number,
-  operation: "COUNT" | "SUM" | "AVG_P" | "WEIGHTED_SUM" | "MIN" | "MAX",
+  operation: OpName,
   filterBytes: number,
   gasPrice: bigint
 ): bigint {

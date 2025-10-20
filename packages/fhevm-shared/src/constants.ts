@@ -54,6 +54,23 @@ export const OpCodes = {
 } as const;
 
 /**
+ * Job operation names (corresponds to Op enum)
+ */
+export const OpNames = [
+  "WEIGHTED_SUM",
+  "SUM",
+  "AVG_P",
+  "COUNT",
+  "MIN",
+  "MAX",
+] as const;
+
+/**
+ * Type for operation names
+ */
+export type OpName = (typeof OpNames)[number];
+
+/**
  * K-Anonymity privacy levels
  */
 export const KAnonymityLevels = {

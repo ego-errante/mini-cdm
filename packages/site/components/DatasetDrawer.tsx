@@ -60,117 +60,18 @@ export function DatasetDrawer({
     processedRows: number;
   } | null>(null);
 
-  async function handleDeleteDataset(datasetId: bigint) {
-    try {
-      await datasetRegistry.deleteDatasetMutation.mutateAsync(datasetId);
-      toast.success("Dataset deleted successfully");
-      onOpenChange(false);
-    } catch (error) {
-      console.error("Failed to delete dataset:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to delete dataset"
-      );
-    }
-  }
-
-  async function handleSubmitRequest(params: any) {
-    try {
-      await jobManager.submitRequestMutation.mutateAsync(params);
-      toast.success("Request submitted successfully");
-    } catch (error) {
-      console.error("Failed to submit request:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to submit request"
-      );
-    }
-  }
-
-  async function handleAcceptRequest(requestId: bigint) {
-    try {
-      await jobManager.acceptRequestMutation.mutateAsync(requestId);
-      toast.success("Request accepted");
-
-      // After accepting, find the corresponding job and open processor modal
-      const request = activity.requests.find(
-        (r, idx) => BigInt(idx + 1) === requestId
-      );
-      if (request && request.jobId > BigInt(0)) {
-        const job = activity.jobs.find((j) => j.id === request.jobId);
-        if (job) {
-          setProcessingJob({
-            requestId,
-            jobId: request.jobId,
-            totalRows: Number(job.progress.totalRows),
-            processedRows: Number(job.progress.processedRows),
-          });
-        }
-      }
-    } catch (error) {
-      console.error("Failed to accept request:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to accept request"
-      );
-    }
-  }
-
-  async function handleRejectRequest(requestId: bigint) {
-    try {
-      await jobManager.rejectRequestMutation.mutateAsync(requestId);
-      toast.success("Request rejected");
-    } catch (error) {
-      console.error("Failed to reject request:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to reject request"
-      );
-    }
-  }
-
-  async function handleCancelRequest(requestId: bigint) {
-    try {
-      await jobManager.cancelRequestMutation.mutateAsync(requestId);
-      toast.success("Request cancelled");
-    } catch (error) {
-      console.error("Failed to cancel request:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to cancel request"
-      );
-    }
-  }
-
-  async function handlePushRow(
+  function handleJobAccepted(
+    requestId: bigint,
     jobId: bigint,
-    rowData: string,
-    merkleProof: string[],
-    rowIndex: number
+    totalRows: number,
+    processedRows: number
   ) {
-    try {
-      await jobManager.pushRowMutation.mutateAsync({
-        jobId,
-        rowData,
-        merkleProof,
-        rowIndex,
-      });
-      toast.success(`Row ${rowIndex} processed`);
-    } catch (error) {
-      console.error("Failed to push row:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to push row"
-      );
-      throw error; // Re-throw to let modal handle it
-    }
-  }
-
-  async function handleFinalizeJob(jobId: bigint) {
-    try {
-      await jobManager.finalizeJobMutation.mutateAsync(jobId);
-      toast.success("Job finalized successfully");
-    } catch (error) {
-      console.error("Failed to finalize job:", error);
-      toast.error(
-        error instanceof Error ? error.message : "Failed to finalize job"
-      );
-      throw error; // Re-throw to let modal handle it
-    }
+    setProcessingJob({
+      requestId,
+      jobId,
+      totalRows,
+      processedRows,
+    });
   }
 
   return (
@@ -178,7 +79,7 @@ export function DatasetDrawer({
       <Sheet open={open} onOpenChange={onOpenChange}>
         <SheetContent
           side="right"
-          className="w-1/2 min-w-[500px] overflow-y-auto"
+          className="w-full md:min-w-[70vw] overflow-y-auto"
         >
           <SheetHeader>
             <div>
@@ -288,9 +189,7 @@ export function DatasetDrawer({
                 jobs={activity.jobs}
                 isOwner={isOwner}
                 currentUserAddress={currentUserAddress}
-                onAcceptRequest={handleAcceptRequest}
-                onRejectRequest={handleRejectRequest}
-                onCancelRequest={handleCancelRequest}
+                onJobAccepted={handleJobAccepted}
               />
             </div>
           </div>
@@ -303,11 +202,10 @@ export function DatasetDrawer({
         onOpenChange={setShowDeleteModal}
         title="Delete Dataset"
         description="Are you sure you want to delete this dataset? This action cannot be undone and all associated data will be lost."
-        onConfirm={async () => {
-          await handleDeleteDataset(dataset.id);
-        }}
+        onConfirm={async () => {}}
         confirmText="Delete"
         variant="destructive"
+        datasetId={dataset.id}
       />
 
       {/* Job Processor Modal */}
@@ -320,10 +218,6 @@ export function DatasetDrawer({
           datasetId={dataset.id}
           totalRows={processingJob.totalRows}
           processedRows={processingJob.processedRows}
-          onPushRow={(rowData, merkleProof, rowIndex) =>
-            handlePushRow(processingJob.jobId, rowData, merkleProof, rowIndex)
-          }
-          onFinalize={() => handleFinalizeJob(processingJob.jobId)}
         />
       )}
 
@@ -334,7 +228,6 @@ export function DatasetDrawer({
         datasetId={dataset.id}
         datasetRowCount={dataset.rowCount}
         datasetNumColumns={dataset.numColumns}
-        onSubmit={handleSubmitRequest}
       />
     </>
   );

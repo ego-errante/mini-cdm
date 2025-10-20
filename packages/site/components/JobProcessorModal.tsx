@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadEncryptedDatasetFromStorage } from "@/lib/datasetUtils";
 import { EncryptedDataset, generateMerkleProof } from "@fhevm/shared";
 import { ethers } from "ethers";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface JobProcessorModalProps {
   open: boolean;
@@ -24,12 +26,6 @@ interface JobProcessorModalProps {
   datasetId: bigint;
   totalRows: number;
   processedRows: number;
-  onPushRow: (
-    rowData: string,
-    merkleProof: string[],
-    rowIndex: number
-  ) => Promise<void>;
-  onFinalize: () => Promise<void>;
 }
 
 export function JobProcessorModal({
@@ -40,10 +36,11 @@ export function JobProcessorModal({
   datasetId,
   totalRows,
   processedRows,
-  onPushRow,
-  onFinalize,
 }: JobProcessorModalProps) {
-  const [isProcessing, setIsProcessing] = useState(false);
+  const { jobManager } = useCDMContext();
+  const pushRowMutation = jobManager.pushRowMutation;
+  const finalizeJobMutation = jobManager.finalizeJobMutation;
+
   const [currentRowIndex, setCurrentRowIndex] = useState(processedRows);
   const [encryptedDataset, setEncryptedDataset] =
     useState<EncryptedDataset | null>(null);
@@ -62,7 +59,7 @@ export function JobProcessorModal({
     }
   }, [open, datasetId, processedRows]);
 
-  async function handleNextRow() {
+  function handleNextRow() {
     if (!encryptedDataset) {
       setError("Dataset not loaded");
       return;
@@ -73,59 +70,76 @@ export function JobProcessorModal({
       return;
     }
 
-    setIsProcessing(true);
     setError(null);
 
-    try {
-      // Get the row data for the current index
-      const rowData = encryptedDataset.rows[currentRowIndex].encryptedData;
+    // Get the row data for the current index
+    const rowData = encryptedDataset.rows[currentRowIndex].encryptedData;
 
-      // Generate merkle proof for this row
-      const allRows = encryptedDataset.rows.map((r) => r.encryptedData);
+    // Generate merkle proof for this row
+    const allRows = encryptedDataset.rows.map((r) => r.encryptedData);
 
-      // Compute leaf hashes
-      const leaves = allRows.map((row, index) =>
-        ethers.keccak256(
-          ethers.solidityPacked(
-            ["uint256", "uint256", "bytes"],
-            [datasetId, index, row]
-          )
+    // Compute leaf hashes
+    const leaves = allRows.map((row, index) =>
+      ethers.keccak256(
+        ethers.solidityPacked(
+          ["uint256", "uint256", "bytes"],
+          [datasetId, index, row]
         )
-      );
+      )
+    );
 
-      const merkleProof = generateMerkleProof(leaves, currentRowIndex);
+    const merkleProof = generateMerkleProof(leaves, currentRowIndex);
 
-      // Push the row
-      await onPushRow(rowData, merkleProof, currentRowIndex);
-
-      // Increment row index
-      setCurrentRowIndex((prev) => prev + 1);
-    } catch (err) {
-      console.error("Failed to push row:", err);
-      setError(err instanceof Error ? err.message : "Failed to push row");
-    } finally {
-      setIsProcessing(false);
-    }
+    // Push the row with success callback to increment index
+    pushRowMutation.mutate(
+      {
+        jobId,
+        rowData,
+        merkleProof,
+        rowIndex: currentRowIndex,
+      },
+      {
+        onSuccess: () => {
+          toast.success(`Row ${currentRowIndex} processed`);
+          // Increment row index
+          setCurrentRowIndex((prev) => prev + 1);
+        },
+        onError: (error) => {
+          console.error("Failed to push row:", error);
+          toast.error(
+            error instanceof Error ? error.message : "Failed to push row"
+          );
+          setError(
+            error instanceof Error ? error.message : "Failed to push row"
+          );
+        },
+      }
+    );
   }
 
-  async function handleFinalize() {
+  function handleFinalize() {
     if (currentRowIndex < totalRows) {
       setError("Cannot finalize: not all rows have been processed");
       return;
     }
 
-    setIsProcessing(true);
     setError(null);
 
-    try {
-      await onFinalize();
-      onOpenChange(false);
-    } catch (err) {
-      console.error("Failed to finalize job:", err);
-      setError(err instanceof Error ? err.message : "Failed to finalize job");
-    } finally {
-      setIsProcessing(false);
-    }
+    finalizeJobMutation.mutate(jobId, {
+      onSuccess: () => {
+        toast.success("Job finalized successfully");
+        onOpenChange(false);
+      },
+      onError: (error) => {
+        console.error("Failed to finalize job:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to finalize job"
+        );
+        setError(
+          error instanceof Error ? error.message : "Failed to finalize job"
+        );
+      },
+    });
   }
 
   const progress = totalRows > 0 ? (currentRowIndex / totalRows) * 100 : 0;
@@ -201,20 +215,25 @@ export function JobProcessorModal({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isProcessing}
+            disabled={
+              pushRowMutation.isPending || finalizeJobMutation.isPending
+            }
           >
             Cancel
           </Button>
           {!isComplete ? (
             <Button
               onClick={handleNextRow}
-              disabled={isProcessing || !encryptedDataset}
+              disabled={pushRowMutation.isPending || !encryptedDataset}
             >
-              {isProcessing ? "Processing..." : "Next Row"}
+              {pushRowMutation.isPending ? "Processing..." : "Next Row"}
             </Button>
           ) : (
-            <Button onClick={handleFinalize} disabled={isProcessing}>
-              {isProcessing ? "Finalizing..." : "Finalize Job"}
+            <Button
+              onClick={handleFinalize}
+              disabled={finalizeJobMutation.isPending}
+            >
+              {finalizeJobMutation.isPending ? "Finalizing..." : "Finalize Job"}
             </Button>
           )}
         </DialogFooter>

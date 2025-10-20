@@ -1,5 +1,6 @@
 "use client";
 
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -8,6 +9,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { NewRequestForm } from "./NewRequestForm";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface NewRequestModalProps {
   open: boolean;
@@ -15,24 +17,6 @@ interface NewRequestModalProps {
   datasetId: bigint;
   datasetRowCount: number;
   datasetNumColumns: number;
-  onSubmit: (params: {
-    datasetId: bigint;
-    baseFee: bigint;
-    computeAllowance: bigint;
-    jobParams: {
-      op: any;
-      targetField: number;
-      weights: number[];
-      divisor: number;
-      clampMin: bigint;
-      clampMax: bigint;
-      roundBucket: number;
-      filter: {
-        bytecode: string;
-        consts: bigint[];
-      };
-    };
-  }) => Promise<void>;
 }
 
 export function NewRequestModal({
@@ -41,11 +25,27 @@ export function NewRequestModal({
   datasetId,
   datasetRowCount,
   datasetNumColumns,
-  onSubmit,
 }: NewRequestModalProps) {
-  function handleSubmit(params: any) {
-    onSubmit(params);
-    onOpenChange(false);
+  const { jobManager } = useCDMContext();
+  const submitMutation = jobManager.submitRequestMutation;
+
+  function handleSubmitRequest(params: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      submitMutation.mutate(params, {
+        onSuccess: () => {
+          toast.success("Request submitted successfully");
+          onOpenChange(false);
+          resolve();
+        },
+        onError: (error) => {
+          console.error("Failed to submit request:", error);
+          toast.error(
+            error instanceof Error ? error.message : "Failed to submit request"
+          );
+          reject(error);
+        },
+      });
+    });
   }
 
   function handleCancel() {
@@ -66,7 +66,7 @@ export function NewRequestModal({
           datasetId={datasetId}
           datasetRowCount={datasetRowCount}
           datasetNumColumns={datasetNumColumns}
-          onSubmit={handleSubmit}
+          onSubmit={handleSubmitRequest}
           onCancel={handleCancel}
         />
       </DialogContent>

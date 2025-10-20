@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import {
   Dialog,
   DialogContent,
@@ -10,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface ConfirmationModalProps {
   open: boolean;
@@ -20,6 +22,8 @@ interface ConfirmationModalProps {
   confirmText?: string;
   cancelText?: string;
   variant?: "default" | "destructive";
+  // Optional props for delete dataset functionality
+  datasetId?: bigint;
 }
 
 export function ConfirmationModal({
@@ -30,20 +34,30 @@ export function ConfirmationModal({
   onConfirm,
   confirmText = "Confirm",
   cancelText = "Cancel",
-  variant = "default",
+  variant = "destructive",
+  datasetId,
 }: ConfirmationModalProps) {
-  const [isLoading, setIsLoading] = useState(false);
+  const { datasetRegistry } = useCDMContext();
+  const deleteMutation = datasetRegistry.deleteDatasetMutation;
 
-  async function handleConfirm() {
-    setIsLoading(true);
-    try {
-      await onConfirm();
+  function handleConfirm() {
+    // If this is a delete dataset confirmation, use the mutation directly
+    if (datasetId && variant === "destructive") {
+      deleteMutation.mutate(datasetId, {
+        onSuccess: () => {
+          toast.success("Dataset deleted successfully");
+          onOpenChange(false);
+        },
+        onError: (error) => {
+          console.error("Failed to delete dataset:", error);
+          toast.error(
+            error instanceof Error ? error.message : "Failed to delete dataset"
+          );
+        },
+      });
+    } else {
+      onConfirm();
       onOpenChange(false);
-    } catch (error) {
-      console.error("Confirmation action failed:", error);
-      // Error handling is done by the parent component
-    } finally {
-      setIsLoading(false);
     }
   }
 
@@ -58,16 +72,16 @@ export function ConfirmationModal({
           <Button
             variant="outline"
             onClick={() => onOpenChange(false)}
-            disabled={isLoading}
+            disabled={deleteMutation.isPending}
           >
             {cancelText}
           </Button>
           <Button
             variant={variant}
             onClick={handleConfirm}
-            disabled={isLoading}
+            disabled={deleteMutation.isPending}
           >
-            {isLoading ? "Processing..." : confirmText}
+            {deleteMutation.isPending ? "Processing..." : confirmText}
           </Button>
         </DialogFooter>
       </DialogContent>

@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { ethers } from "ethers";
-import { Op, estimateJobAllowance } from "@fhevm/shared";
+import { Op, OpNames, OpName, estimateJobAllowance } from "@fhevm/shared";
 import { Button } from "@/components/ui/button";
 import {
   Form,
@@ -106,20 +106,7 @@ export function NewRequestForm({
         const filterBytecodeValue = compiledFilter?.bytecode || "0x";
         const filterBytes = (filterBytecodeValue.length - 2) / 2; // Convert hex string to byte count
 
-        const operationName = [
-          "WEIGHTED_SUM",
-          "SUM",
-          "AVG_P",
-          "COUNT",
-          "MIN",
-          "MAX",
-        ][operation] as
-          | "COUNT"
-          | "SUM"
-          | "AVG_P"
-          | "WEIGHTED_SUM"
-          | "MIN"
-          | "MAX";
+        const operationName = OpNames[operation] as OpName;
 
         const gasPrice = ethers.parseUnits("20", "gwei"); // Default gas price
         const requiredAllowance = estimateJobAllowance(

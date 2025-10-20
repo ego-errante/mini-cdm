@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { toast } from "sonner";
 import { JobData, JobRequest, RequestStatus } from "@fhevm/shared";
+import { useCDMContext } from "@/hooks/useCDMContext";
 import {
   Table,
   TableBody,
@@ -27,9 +29,12 @@ interface ActivityTableProps {
   jobs: JobData[];
   isOwner: boolean;
   currentUserAddress: string | undefined;
-  onAcceptRequest: (requestId: bigint) => Promise<void>;
-  onRejectRequest: (requestId: bigint) => Promise<void>;
-  onCancelRequest: (requestId: bigint) => Promise<void>;
+  onJobAccepted?: (
+    requestId: bigint,
+    jobId: bigint,
+    totalRows: number,
+    processedRows: number
+  ) => void;
 }
 
 interface ActivityRow {
@@ -47,10 +52,12 @@ export function ActivityTable({
   jobs,
   isOwner,
   currentUserAddress,
-  onAcceptRequest,
-  onRejectRequest,
-  onCancelRequest,
+  onJobAccepted,
 }: ActivityTableProps) {
+  const { jobManager } = useCDMContext();
+  const acceptMutation = jobManager.acceptRequestMutation;
+  const rejectMutation = jobManager.rejectRequestMutation;
+  const cancelMutation = jobManager.cancelRequestMutation;
   const [confirmModal, setConfirmModal] = useState<{
     open: boolean;
     title: string;
@@ -99,6 +106,64 @@ export function ActivityTable({
     }
   });
 
+  function handleAcceptRequest(requestId: bigint) {
+    acceptMutation.mutate(requestId, {
+      onSuccess: () => {
+        toast.success("Request accepted");
+
+        // After accepting, find the corresponding job and notify parent
+        const request = requests.find(
+          (r, idx) => BigInt(idx + 1) === requestId
+        );
+        if (request && request.jobId > BigInt(0)) {
+          const job = jobs.find((j) => j.id === request.jobId);
+          if (job && onJobAccepted) {
+            onJobAccepted(
+              requestId,
+              request.jobId,
+              Number(job.progress.totalRows),
+              Number(job.progress.processedRows)
+            );
+          }
+        }
+      },
+      onError: (error) => {
+        console.error("Failed to accept request:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to accept request"
+        );
+      },
+    });
+  }
+
+  function handleRejectRequest(requestId: bigint) {
+    rejectMutation.mutate(requestId, {
+      onSuccess: () => {
+        toast.success("Request rejected");
+      },
+      onError: (error) => {
+        console.error("Failed to reject request:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to reject request"
+        );
+      },
+    });
+  }
+
+  function handleCancelRequest(requestId: bigint) {
+    cancelMutation.mutate(requestId, {
+      onSuccess: () => {
+        toast.success("Request cancelled");
+      },
+      onError: (error) => {
+        console.error("Failed to cancel request:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to cancel request"
+        );
+      },
+    });
+  }
+
   function getStatusBadge(status: RequestStatus) {
     const variants: Record<RequestStatus, { variant: any; label: string }> = {
       [RequestStatus.PENDING]: { variant: "secondary", label: "Pending" },
@@ -117,7 +182,7 @@ export function ActivityTable({
       title: "Reject Request",
       description:
         "Are you sure you want to reject this request? This action cannot be undone.",
-      onConfirm: async () => onRejectRequest(requestId),
+      onConfirm: async () => handleRejectRequest(requestId),
       variant: "destructive",
     });
   }
@@ -128,7 +193,7 @@ export function ActivityTable({
       title: "Cancel Request",
       description:
         "Are you sure you want to cancel this request? Your payment will be refunded.",
-      onConfirm: async () => onCancelRequest(requestId),
+      onConfirm: async () => handleCancelRequest(requestId),
       variant: "default",
     });
   }
@@ -190,7 +255,9 @@ export function ActivityTable({
                                 size="icon"
                                 variant="ghost"
                                 className="h-8 w-8"
-                                onClick={() => onAcceptRequest(row.requestId!)}
+                                onClick={() =>
+                                  handleAcceptRequest(row.requestId!)
+                                }
                               >
                                 <Check className="h-4 w-4" />
                               </Button>
@@ -221,7 +288,7 @@ export function ActivityTable({
                       row.request &&
                       row.status === RequestStatus.PENDING &&
                       currentUserAddress &&
-                      row.buyer.toLowerCase() ===
+                      row.buyer?.toLowerCase() ===
                         currentUserAddress.toLowerCase() && (
                         <Tooltip>
                           <TooltipTrigger asChild>
