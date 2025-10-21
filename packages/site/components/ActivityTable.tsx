@@ -72,13 +72,21 @@ export function ActivityTable({
 
   const [viewResultModal, setViewResultModal] = useState<{
     open: boolean;
-    request: JobRequest | undefined;
-    job: JobData | undefined;
+    requestId: bigint | undefined;
+    jobId: bigint | undefined;
   }>({
     open: false,
-    request: undefined,
-    job: undefined,
+    requestId: undefined,
+    jobId: undefined,
   });
+
+  // Keep modal data in sync with current requests/jobs when modal is open
+  const currentModalRequest = viewResultModal.requestId
+    ? requests.find((r) => r.requestId === viewResultModal.requestId)
+    : undefined;
+  const currentModalJob = viewResultModal.jobId
+    ? jobs.find((j) => j.jobId === viewResultModal.jobId)
+    : undefined;
 
   // Create activity rows by matching requests and jobs
   const activityRows: ActivityRow[] = [];
@@ -337,8 +345,8 @@ export function ActivityTable({
                               onClick={() =>
                                 setViewResultModal({
                                   open: true,
-                                  request: row.request,
-                                  job: row.job,
+                                  requestId: row.requestId,
+                                  jobId: row.jobId,
                                 })
                               }
                             >
@@ -376,8 +384,8 @@ export function ActivityTable({
         onOpenChange={(open) =>
           setViewResultModal({ ...viewResultModal, open })
         }
-        request={viewResultModal.request}
-        job={viewResultModal.job}
+        request={currentModalRequest}
+        job={currentModalJob}
       />
     </>
   );

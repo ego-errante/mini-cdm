@@ -8,14 +8,11 @@ import {
   Signers,
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
-  TestDataset,
-  OpCodes,
-  KAnonymityLevels,
-  RowConfig,
   createAndRegisterDatasetPerRow,
 } from "./utils";
 import { compileFilterDSL, gt, lt, and, or, not, eq } from "./filter-dsl";
 import { estimateJobGas } from "../../../misc/estimateJobGas_log";
+import { KAnonymityLevels, OpCodes, RowConfig, TestDataset } from "@fhevm/shared";
 
 // ========================================
 // VALIDATION TEST CASES

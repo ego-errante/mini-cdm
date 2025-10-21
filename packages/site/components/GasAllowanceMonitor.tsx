@@ -17,6 +17,7 @@ import { Label } from "@/components/ui/label";
 import { AlertTriangle, Info, TrendingUp, Fuel, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { useCDMContext } from "@/hooks/useCDMContext";
+import { DEFAULT_GAS_PRICE } from "@fhevm/shared";
 
 interface GasAllowanceMonitorProps {
   requestId: bigint;
@@ -27,9 +28,12 @@ export function GasAllowanceMonitor({
   requestId,
   showTopUpForm = false,
 }: GasAllowanceMonitorProps) {
-  const { jobManager } = useCDMContext();
+  const { jobManager, gasPrice } = useCDMContext();
   const topUpMutation = jobManager.topUpAllowanceMutation;
   const [topUpAmount, setTopUpAmount] = useState<string>("0.01");
+
+  // Get current gas price from context
+  const { data: currentGasPrice } = gasPrice;
 
   // Get live data from the query (this will update automatically when invalidated)
   const activity = jobManager.getJobManagerActivity.data;
@@ -78,8 +82,8 @@ export function GasAllowanceMonitor({
     const filterBytecode = request.params.filter?.bytecode || "0x";
     const filterBytes = (filterBytecode.length - 2) / 2;
 
-    // Use default gas price (20 gwei)
-    const gasPrice = ethers.parseUnits("20", "gwei");
+    // Use current gas price from network, or fallback to default (20 gwei)
+    const gasPrice = currentGasPrice || DEFAULT_GAS_PRICE;
 
     // Estimate required allowance for remaining rows (already includes 2x safety margin)
     const estimatedRemainingCost = estimateJobAllowance(

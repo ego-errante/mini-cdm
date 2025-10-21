@@ -33,7 +33,7 @@ import {
   OpcodeName,
   buildBytecode,
 } from "../filter-dsl";
-import { KAnonymityLevels, OpCodes, RowConfig, TestDataset } from "@fhevm/shared";
+import { KAnonymityLevels, OpCodes, RowConfig, TestDataset, DEFAULT_GAS_PRICE } from "@fhevm/shared";
 
 describe("JobManager", function () {
   let signers: Signers;
@@ -504,7 +504,7 @@ describe("JobManager", function () {
         },
       };
 
-      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
       const computeAllowance = estimateJobAllowance(dataset.rows.length, dataset.numColumns, "SUM", 0, gasPrice);
       const totalValue = BigInt(baseFee) + BigInt(computeAllowance);
 

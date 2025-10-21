@@ -2,6 +2,8 @@
  * Shared constants for FHEVM packages
  */
 
+import { ethers } from "ethers";
+
 /**
  * Default network configuration
  */
@@ -26,6 +28,11 @@ export const GAS_LIMITS = {
   DATASET_REGISTER: 5000000,
   JOB_SUBMISSION: 3000000,
 } as const;
+
+/**
+ * Default gas price (20 gwei) used as fallback when network gas price is unavailable
+ */
+export const DEFAULT_GAS_PRICE = ethers.parseUnits("20", "gwei");
 
 /**
  * Encrypted type sizes in bits

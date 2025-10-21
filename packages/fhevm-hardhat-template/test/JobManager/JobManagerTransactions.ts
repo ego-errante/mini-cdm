@@ -9,10 +9,10 @@ import {
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
   setupTestDataset,
-  TestDataset,
   estimateJobAllowance,
   estimateJobGas,
 } from "../utils";
+import { TestDataset, DEFAULT_GAS_PRICE } from "@fhevm/shared";
 
 describe("Job Transactions", () => {
   let signers: Signers;
@@ -133,7 +133,7 @@ describe("Job Transactions", () => {
     const baseFee = ethers.parseEther("0.01");
 
     // Use gas estimation with 2x safety margin
-    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
     const computeAllowance = estimateJobAllowance(
       testDataset.rows.length,
       testDataset.numColumns,
@@ -245,7 +245,7 @@ describe("Job Transactions", () => {
       const requestId = await jobManagerContract.nextRequestId();
 
       const baseFee = ethers.parseEther("0.1");
-      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
       const computeAllowance = estimateJobAllowance(
         testDataset.rows.length,
         testDataset.numColumns,
@@ -319,7 +319,7 @@ describe("Job Transactions", () => {
       const baseFee = ethers.parseEther("0.1");
 
       // Use gas estimation with 2x safety margin
-      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
       const computeAllowance = estimateJobAllowance(
         testDataset.rows.length,
         testDataset.numColumns,
@@ -560,7 +560,7 @@ describe("Job Transactions", () => {
       const baseFee = ethers.parseEther("0.1");
 
       // Use gas estimation to ensure sufficient allowance
-      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
       const computeAllowance = estimateJobAllowance(
         testDataset.rows.length,
         testDataset.numColumns,
@@ -969,7 +969,7 @@ describe("Job Transactions", () => {
         const progress = await jobManagerContract.getJobProgress(jobId2);
 
         // Estimate remaining cost
-        const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+        const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
         const estimatedGas = estimateJobGas(1, testDataset.numColumns, "COUNT", 0);
         const estimatedCostPerRow = estimatedGas * gasPrice;
         const remainingRows = progress.remainingRows;
@@ -997,7 +997,7 @@ describe("Job Transactions", () => {
       // Check allowance one more time before finalize
       const finalRequest = await jobManagerContract.getRequest(requestId2);
       const finalProgress = await jobManagerContract.getJobProgress(jobId2);
-      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+      const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
       const finalizeGas = estimateJobGas(1, testDataset.numColumns, "COUNT", 0);
       const finalizeGasEstimate = finalizeGas * gasPrice * 2n;
 

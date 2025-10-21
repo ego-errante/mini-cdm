@@ -5,7 +5,7 @@ import { ethers, fhevm } from "hardhat";
 import { createPackedEncryptedTable, createPackedEncryptedRow } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
-import { TestDataset, RowConfig, DatasetObject, OpCodes, KAnonymityLevels } from "@fhevm/shared";
+import { TestDataset, RowConfig, DatasetObject, OpCodes, KAnonymityLevels, Op } from "@fhevm/shared";
 
 // Local type alias for compatibility with RowDecoder functions
 type LocalRowConfig = {
@@ -323,7 +323,7 @@ export async function createAndRegisterDatasetPerRow(
 
 export function createDefaultJobParams() {
   return {
-    op: OpCodes.SUM,
+    op: OpCodes.SUM as Op,
     targetField: 0,
     weights: [] as number[],
     divisor: 0,

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useEffect } from "react";
 import { ethers } from "ethers";
 import { JobData, JobRequest, Op, RequestStatus } from "@fhevm/shared";
 import { FhevmDecryptionSignature } from "@fhevm/react";
@@ -19,6 +19,7 @@ import { Loader2, Eye, AlertTriangle, CopyIcon, Info } from "lucide-react";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { toast } from "sonner";
 import { GasAllowanceMonitor } from "./GasAllowanceMonitor";
+import { useMutation } from "@tanstack/react-query";
 
 interface ViewResultModalProps {
   open: boolean;
@@ -45,36 +46,17 @@ export function ViewResultModal({
     jobManager,
   } = useCDMContext();
 
-  const [isDecrypting, setIsDecrypting] = useState(false);
-  const [decryptedResult, setDecryptedResult] = useState<
-    DecryptedResult | undefined
-  >(undefined);
-  const [error, setError] = useState<string | undefined>(undefined);
+  const decryptMutation = useMutation({
+    mutationFn: async () => {
+      if (
+        !job?.result ||
+        !fhevmInstance ||
+        !ethersSigner ||
+        !jobManager.contractAddress
+      ) {
+        throw new Error("Missing required data for decryption");
+      }
 
-  // Reset state when modal opens/closes or job changes
-  useEffect(() => {
-    if (!open) {
-      setDecryptedResult(undefined);
-      setError(undefined);
-      setIsDecrypting(false);
-    }
-  }, [open, job?.id]);
-
-  const decryptResult = useCallback(async () => {
-    if (
-      !job?.result ||
-      !fhevmInstance ||
-      !ethersSigner ||
-      !jobManager.contractAddress
-    ) {
-      setError("Missing required data for decryption");
-      return;
-    }
-
-    setIsDecrypting(true);
-    setError(undefined);
-
-    try {
       // Load or create decryption signature
       const sig = await FhevmDecryptionSignature.loadOrSign(
         fhevmInstance,
@@ -108,23 +90,25 @@ export function ViewResultModal({
         sig.durationDays
       );
 
-      setDecryptedResult({
+      return {
         result: BigInt(decrypted[job.result.result]),
         isOverflow: Boolean(decrypted[job.result.isOverflow]),
-      });
-    } catch (err) {
-      console.error("Decryption error:", err);
-      setError(err instanceof Error ? err.message : "Failed to decrypt result");
-    } finally {
-      setIsDecrypting(false);
+      };
+    },
+    onError: (error) => {
+      console.error("Decryption error:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to decrypt result"
+      );
+    },
+  });
+
+  // Reset mutation when modal closes or job result changes
+  useEffect(() => {
+    if (!open) {
+      decryptMutation.reset();
     }
-  }, [
-    job?.result,
-    fhevmInstance,
-    ethersSigner,
-    fhevmDecryptionSignatureStorage,
-    jobManager.contractAddress,
-  ]);
+  }, [open, job?.id, job?.result]);
 
   function formatJobParams(params: JobRequest["params"]) {
     const opLabels: Record<Op, string> = {
@@ -379,7 +363,8 @@ export function ViewResultModal({
   // Check if result indicates k-anonymity failure (sentinel value: uint128.max)
   const K_ANONYMITY_SENTINEL = BigInt(2) ** BigInt(128) - BigInt(1);
   const isKAnonymityFailure =
-    decryptedResult && decryptedResult.result === K_ANONYMITY_SENTINEL;
+    decryptMutation.data &&
+    decryptMutation.data.result === K_ANONYMITY_SENTINEL;
 
   // Calculate progress percentage
   const progressPercentage =
@@ -570,14 +555,14 @@ export function ViewResultModal({
                 Encrypted Result
               </h3>
 
-              {!decryptedResult && !error && (
+              {!decryptMutation.data && !decryptMutation.isError && (
                 <div className="bg-muted/50 rounded-lg p-4 text-center">
                   <Button
-                    onClick={decryptResult}
-                    disabled={!canDecrypt || isDecrypting}
+                    onClick={() => decryptMutation.mutate()}
+                    disabled={!canDecrypt || decryptMutation.isPending}
                     className="w-full"
                   >
-                    {isDecrypting ? (
+                    {decryptMutation.isPending ? (
                       <>
                         <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                         Decrypting...
@@ -589,7 +574,7 @@ export function ViewResultModal({
                       </>
                     )}
                   </Button>
-                  {!canDecrypt && !isDecrypting && (
+                  {!canDecrypt && !decryptMutation.isPending && (
                     <p className="text-xs text-muted-foreground mt-2">
                       Connect your wallet to decrypt
                     </p>
@@ -597,13 +582,17 @@ export function ViewResultModal({
                 </div>
               )}
 
-              {error && (
+              {decryptMutation.isError && (
                 <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-                  <p className="text-sm text-destructive">{error}</p>
+                  <p className="text-sm text-destructive">
+                    {decryptMutation.error instanceof Error
+                      ? decryptMutation.error.message
+                      : "Failed to decrypt result"}
+                  </p>
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={decryptResult}
+                    onClick={() => decryptMutation.mutate()}
                     className="mt-2"
                   >
                     Try Again
@@ -611,7 +600,7 @@ export function ViewResultModal({
                 </div>
               )}
 
-              {decryptedResult && (
+              {decryptMutation.data && (
                 <div className="space-y-3">
                   {isKAnonymityFailure ? (
                     <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
@@ -635,11 +624,11 @@ export function ViewResultModal({
                           Decrypted Result:
                         </p>
                         <p className="text-2xl font-bold font-mono">
-                          {decryptedResult.result.toString()}
+                          {decryptMutation.data.result.toString()}
                         </p>
                       </div>
 
-                      {decryptedResult.isOverflow && (
+                      {decryptMutation.data.isOverflow && (
                         <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
                           <div className="flex items-center gap-2">
                             <AlertTriangle className="h-4 w-4 text-orange-500" />

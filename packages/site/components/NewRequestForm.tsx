@@ -26,6 +26,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { FilterBuilder } from "./FilterBuilder";
 import { CompiledFilter } from "@fhevm/shared";
 import { InfoIcon } from "lucide-react";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface NewRequestFormProps {
   datasetId: bigint;
@@ -71,6 +72,7 @@ export function NewRequestForm({
   onSubmit,
   onCancel,
 }: NewRequestFormProps) {
+  const { ethersReadonlyProvider, gasPrice } = useCDMContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [gasEstimate, setGasEstimate] = useState<{
     gas: bigint;
@@ -98,9 +100,17 @@ export function NewRequestForm({
   const watchedBaseFee = form.watch("baseFee");
   const watchedComputeAllowance = form.watch("computeAllowance");
 
+  // Get current gas price from context
+  const { data: currentGasPrice } = gasPrice;
+
   // Calculate gas estimate when relevant fields change
   useEffect(() => {
     async function calculateEstimate() {
+      // Don't calculate if we don't have a gas price yet
+      if (!currentGasPrice) {
+        return;
+      }
+
       try {
         const operation = parseInt(watchedOperation);
         const filterBytecodeValue = compiledFilter?.bytecode || "0x";
@@ -108,17 +118,16 @@ export function NewRequestForm({
 
         const operationName = OpNames[operation] as OpName;
 
-        const gasPrice = ethers.parseUnits("20", "gwei"); // Default gas price
         const requiredAllowance = estimateJobAllowance(
           datasetRowCount,
           datasetNumColumns,
           operationName,
           filterBytes,
-          gasPrice
+          currentGasPrice
         );
 
         setGasEstimate({
-          gas: requiredAllowance / gasPrice,
+          gas: requiredAllowance / currentGasPrice,
           cost: requiredAllowance,
         });
       } catch (error) {
@@ -128,7 +137,13 @@ export function NewRequestForm({
     }
 
     calculateEstimate();
-  }, [watchedOperation, compiledFilter, datasetRowCount, datasetNumColumns]);
+  }, [
+    watchedOperation,
+    compiledFilter,
+    datasetRowCount,
+    datasetNumColumns,
+    currentGasPrice,
+  ]);
 
   async function handleSubmit(values: FormValues) {
     setIsSubmitting(true);
@@ -407,7 +422,7 @@ export function NewRequestForm({
         />
 
         {/* Gas Estimate */}
-        {gasEstimate && (
+        {gasEstimate && currentGasPrice && (
           <Alert>
             <AlertDescription>
               <div className="space-y-2 text-sm">
@@ -417,6 +432,12 @@ export function NewRequestForm({
                   your compute allowance.
                 </div>
                 <div className="space-y-1">
+                  <div className="flex justify-between">
+                    <span className="font-semibold">Current Gas Price:</span>
+                    <span>
+                      {ethers.formatUnits(currentGasPrice, "gwei")} gwei
+                    </span>
+                  </div>
                   <div className="flex justify-between">
                     <span className="font-semibold">Estimated Gas:</span>
                     <span>{gasEstimate.gas.toString()} units</span>

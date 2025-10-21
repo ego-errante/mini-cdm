@@ -15,6 +15,7 @@ import {
   type ColumnConfig,
   type JobParams,
   type FilterProg,
+  DEFAULT_GAS_PRICE,
 } from "@fhevm/shared";
 
 /**
@@ -277,7 +278,7 @@ describe("JobManager - Frontend Flow with @fhevm/shared utilities", function () 
     // Step 3: Submit request
     const jobParams = createJobParams(OpCodes.COUNT);
     const baseFee = ethers.parseEther("0.01");
-    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
     const computeAllowance = estimateJobAllowance(
       encryptedDataset.rowCount,
       encryptedDataset.numColumns,
@@ -340,7 +341,7 @@ describe("JobManager - Frontend Flow with @fhevm/shared utilities", function () 
     // Submit and accept request
     const jobParams = createJobParams(OpCodes.COUNT);
     const baseFee = ethers.parseEther("0.01");
-    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
     const computeAllowance = estimateJobAllowance(2, 3, "COUNT", 0, gasPrice);
 
     const requestId = await submitRequest(datasetId, buyer, jobParams, baseFee, computeAllowance);
@@ -375,7 +376,7 @@ describe("JobManager - Frontend Flow with @fhevm/shared utilities", function () 
     // Submit request with SUM operation
     const jobParams = createJobParams(OpCodes.SUM, 0); // Sum first column
     const baseFee = ethers.parseEther("0.01");
-    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
     const computeAllowance = estimateJobAllowance(3, 3, "SUM", 0, gasPrice);
 
     const requestId = await submitRequest(datasetId, buyer, jobParams, baseFee, computeAllowance);
@@ -423,7 +424,7 @@ describe("JobManager - Frontend Flow with @fhevm/shared utilities", function () 
     // Submit request
     const jobParams = createJobParams(OpCodes.COUNT);
     const baseFee = ethers.parseEther("0.01");
-    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || ethers.parseUnits("20", "gwei");
+    const gasPrice = (await ethers.provider.getFeeData()).gasPrice || DEFAULT_GAS_PRICE;
     const computeAllowance = estimateJobAllowance(5, 5, "COUNT", 0, gasPrice);
 
     const requestId = await submitRequest(datasetId, buyer, jobParams, baseFee, computeAllowance);

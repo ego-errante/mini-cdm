@@ -16,6 +16,7 @@ import { useMetaMaskEthersSigner } from "./metamask/useMetaMaskEthersSigner";
 import { useFhevm } from "@fhevm/react";
 import { useJobManager } from "./useJobManager";
 import { useDatasetRegistry } from "./useDatasetRegistry";
+import { useGasPrice } from "./useGasPrice";
 
 export interface CDMContextValue {
   // MetaMask/Ethers state
@@ -42,6 +43,9 @@ export interface CDMContextValue {
   // Contract hooks
   jobManager: ReturnType<typeof useJobManager>;
   datasetRegistry: ReturnType<typeof useDatasetRegistry>;
+
+  // Gas price hook
+  gasPrice: ReturnType<typeof useGasPrice>;
 }
 
 const CDMContext = createContext<CDMContextValue | undefined>(undefined);
@@ -102,6 +106,9 @@ export function CDMProvider({ children }: CDMProviderProps) {
     sameSigner,
   });
 
+  // Gas price hook
+  const gasPrice = useGasPrice(chainId, ethersReadonlyProvider);
+
   const contextValue = useMemo<CDMContextValue>(
     () => ({
       // MetaMask/Ethers state
@@ -126,6 +133,9 @@ export function CDMProvider({ children }: CDMProviderProps) {
       // Contract hooks
       jobManager,
       datasetRegistry,
+
+      // Gas price hook
+      gasPrice,
     }),
     [
       provider,
@@ -143,6 +153,7 @@ export function CDMProvider({ children }: CDMProviderProps) {
       fhevmDecryptionSignatureStorage,
       jobManager,
       datasetRegistry,
+      gasPrice,
     ]
   );
 
