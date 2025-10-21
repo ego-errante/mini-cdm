@@ -4,7 +4,7 @@ import {
   type GenericStringStorage,
 } from "@fhevm/react";
 import { ethers } from "ethers";
-import { RefObject, useMemo } from "react";
+import { RefObject, useMemo, useEffect } from "react";
 
 import { DatasetRegistryAddresses } from "@/abi/DatasetRegistryAddresses";
 import { DatasetRegistryABI } from "@/abi/DatasetRegistryABI";
@@ -186,6 +186,39 @@ export const useDatasetRegistry = (parameters: {
     refetchOnReconnect: false,
     staleTime: Infinity,
   });
+
+  // Event listeners for automatic query invalidation
+  useEffect(() => {
+    if (!datasetRegistry.address || !ethersReadonlyProvider) {
+      return;
+    }
+
+    const contract = new ethers.Contract(
+      datasetRegistry.address,
+      datasetRegistry.abi,
+      ethersReadonlyProvider
+    );
+
+    const handleDatasetCommitted = (datasetId: bigint, owner: string) => {
+      console.log("DatasetCommitted event:", { datasetId, owner });
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    };
+
+    const handleDatasetDeleted = (datasetId: bigint, owner: string) => {
+      console.log("DatasetDeleted event:", { datasetId, owner });
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    };
+
+    // Attach event listeners
+    contract.on("DatasetCommitted", handleDatasetCommitted);
+    contract.on("DatasetDeleted", handleDatasetDeleted);
+
+    // Cleanup function
+    return () => {
+      contract.off("DatasetCommitted", handleDatasetCommitted);
+      contract.off("DatasetDeleted", handleDatasetDeleted);
+    };
+  }, [datasetRegistry.address, ethersReadonlyProvider, queryClient]);
 
   return {
     datasetRegistry,

@@ -6,19 +6,20 @@
 import { ethers } from "ethers";
 
 export interface ColumnConfig {
-  type: "euint8" | "euint16" | "euint32" | "euint64";
+  type: "euint8" | "euint32" | "euint64";
   value: number;
 }
 
 /**
  * Auto-detect euint type based on value range
+ * Note: euint16 is NOT supported by the contract, so we skip it
  */
 export function detectEuintType(
   value: number
-): "euint8" | "euint16" | "euint32" | "euint64" {
+): "euint8" | "euint32" | "euint64" {
   const numValue = Number(value);
   if (numValue >= 0 && numValue <= 255) return "euint8";
-  if (numValue >= 0 && numValue <= 65535) return "euint16";
+  // Skip euint16 (not supported by contract) - jump to euint32
   if (numValue >= 0 && numValue <= 4294967295) return "euint32";
   return "euint64";
 }
@@ -85,10 +86,6 @@ async function encryptValues(
       case "euint8":
         input.add8(item.value);
         typeTags.push("01");
-        break;
-      case "euint16":
-        input.add16(item.value);
-        typeTags.push("04"); // Type tag for euint16
         break;
       case "euint32":
         input.add32(item.value);

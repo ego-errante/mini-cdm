@@ -1,6 +1,6 @@
 import { type FhevmInstance, type GenericStringStorage } from "@fhevm/react";
 import { ethers } from "ethers";
-import { RefObject, useMemo } from "react";
+import { RefObject, useMemo, useEffect } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { JobManagerAddresses } from "@/abi/JobManagerAddresses";
@@ -114,6 +114,7 @@ export const useJobManager = (parameters: {
               baseFee: requestResult[6],
               computeAllowance: requestResult[7],
               gasDebtToSeller: requestResult[8],
+              requestId: requestId, // Assign global unique ID
             };
 
             return request;
@@ -147,6 +148,7 @@ export const useJobManager = (parameters: {
               processedRows: progress[1],
               remainingRows: progress[2],
             },
+            jobId: jobId, // Assign global unique ID
           };
 
           // Only include result if job is finalized
@@ -176,32 +178,52 @@ export const useJobManager = (parameters: {
       );
       const filteredJobs = jobs.filter((j): j is JobData => j !== null);
 
-      // Create matched map by datasetId
-      const matched: Record<string, { job?: JobData; request?: JobRequest }> =
-        {};
-
-      // Add jobs to matched map
+      // Create job lookup map by jobId for O(1) access
+      const jobsById: Record<string, JobData> = {};
       filteredJobs.forEach((job) => {
-        const datasetIdStr = job.datasetId.toString();
-        if (!matched[datasetIdStr]) {
-          matched[datasetIdStr] = {};
-        }
-        matched[datasetIdStr].job = job;
+        jobsById[job.id.toString()] = job;
       });
 
-      // Add requests to matched map
-      filteredRequests.forEach((request) => {
+      // Group requests and jobs by datasetId for enumeration
+      const byDataset: Record<
+        string,
+        { requests: JobRequest[]; jobs: JobData[] }
+      > = {};
+
+      filteredRequests.forEach((request, idx) => {
         const datasetIdStr = request.datasetId.toString();
-        if (!matched[datasetIdStr]) {
-          matched[datasetIdStr] = {};
+        if (!byDataset[datasetIdStr]) {
+          byDataset[datasetIdStr] = { requests: [], jobs: [] };
         }
-        matched[datasetIdStr].request = request;
+        byDataset[datasetIdStr].requests.push(request);
+      });
+
+      filteredJobs.forEach((job) => {
+        const datasetIdStr = job.datasetId.toString();
+        if (!byDataset[datasetIdStr]) {
+          byDataset[datasetIdStr] = { requests: [], jobs: [] };
+        }
+        byDataset[datasetIdStr].jobs.push(job);
+      });
+
+      // Create requestId -> job lookup for O(1) access in JobProcessorModal
+      // requestId is 1-indexed position in the requests array
+      const requestToJob: Record<string, JobData | null> = {};
+      filteredRequests.forEach((request, idx) => {
+        const requestId = (idx + 1).toString();
+        // Find the job linked to this request via jobId
+        const job =
+          request.jobId > BigInt(0)
+            ? jobsById[request.jobId.toString()] || null
+            : null;
+        requestToJob[requestId] = job;
       });
 
       return {
         requests: filteredRequests,
         jobs: filteredJobs,
-        matched,
+        byDataset,
+        requestToJob,
       };
     },
     enabled: !!jobManager.address && !!ethersReadonlyProvider && isDeployed,
@@ -360,6 +382,50 @@ export const useJobManager = (parameters: {
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     },
   });
+
+  // Event listeners for automatic query invalidation
+  useEffect(() => {
+    if (!jobManager.address || !ethersReadonlyProvider) {
+      return;
+    }
+
+    const contract = new ethers.Contract(
+      jobManager.address,
+      jobManager.abi,
+      ethersReadonlyProvider
+    );
+
+    const handleRequestSubmitted = (
+      requestId: bigint,
+      buyer: string,
+      datasetId: bigint
+    ) => {
+      console.log("RequestSubmitted event:", { requestId, buyer, datasetId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRequestAccepted = (requestId: bigint, jobId: bigint) => {
+      console.log("RequestAccepted event:", { requestId, jobId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRequestRejected = (requestId: bigint) => {
+      console.log("RequestRejected event:", { requestId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    // Attach event listeners
+    contract.on("RequestSubmitted", handleRequestSubmitted);
+    contract.on("RequestAccepted", handleRequestAccepted);
+    contract.on("RequestRejected", handleRequestRejected);
+
+    // Cleanup function
+    return () => {
+      contract.off("RequestSubmitted", handleRequestSubmitted);
+      contract.off("RequestAccepted", handleRequestAccepted);
+      contract.off("RequestRejected", handleRequestRejected);
+    };
+  }, [jobManager.address, ethersReadonlyProvider, queryClient]);
 
   return {
     jobManager,

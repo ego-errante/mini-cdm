@@ -109,6 +109,7 @@ export interface JobRequest {
   baseFee: bigint;
   computeAllowance: bigint;
   gasDebtToSeller: bigint;
+  requestId: bigint; // Global unique ID across all datasets
 }
 
 /**
@@ -129,15 +130,20 @@ export interface JobData {
     result: string; // euint256 as bytes32
     isOverflow: string; // ebool as bytes32
   };
+  jobId: bigint; // Global unique ID across all datasets
 }
 
 /**
  * Job manager activity structure
+ * Precomputed data structures for efficient lookups:
+ * - byDataset: O(1) lookup of requests/jobs by datasetId
+ * - requestToJob: O(1) lookup of job by requestId (string is requestId)
  */
 export interface JobManagerActivity {
   jobs: JobData[];
   requests: JobRequest[];
-  matched: Record<string, { job?: JobData; request?: JobRequest }>;
+  byDataset: Record<string, { requests: JobRequest[]; jobs: JobData[] }>;
+  requestToJob: Record<string, JobData | null>;
 }
 
 /**
@@ -163,6 +169,7 @@ export interface EncryptedRow {
 export interface EncryptedDataset {
   datasetId: string;
   rows: EncryptedRow[];
+  proofs: string[][];
   numColumns: number;
   rowCount: number;
   merkleRoot: string;

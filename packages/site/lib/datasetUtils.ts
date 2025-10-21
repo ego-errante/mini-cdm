@@ -4,7 +4,6 @@ export interface ParsedDataset {
   rows: any[][];
   numColumns: number;
   rowCount: number;
-  merkleRoot: string;
 }
 
 /**
@@ -46,28 +45,6 @@ export function parseJSON(jsonContent: string): any[][] {
 }
 
 /**
- * Compute merkle root from dataset rows
- * For simplicity, we're using a hash of the concatenated row hashes
- * In production, you'd want a proper merkle tree implementation
- */
-export function computeMerkleRoot(rows: any[][]): string {
-  if (rows.length === 0) {
-    return ethers.ZeroHash;
-  }
-
-  // Hash each row
-  const rowHashes = rows.map((row) => {
-    const rowString = JSON.stringify(row);
-    return ethers.keccak256(ethers.toUtf8Bytes(rowString));
-  });
-
-  // Simple merkle root: hash of all row hashes concatenated
-  // TODO: Implement proper merkle tree
-  const concatenated = rowHashes.join("");
-  return ethers.keccak256(ethers.toUtf8Bytes(concatenated));
-}
-
-/**
  * Process uploaded file and return dataset metadata
  */
 export async function processDatasetFile(file: File): Promise<ParsedDataset> {
@@ -79,7 +56,7 @@ export async function processDatasetFile(file: File): Promise<ParsedDataset> {
   if (fileType === "json") {
     rows = parseJSON(content);
   } else {
-    rows = parseCSV(content);
+    rows = parseCSV(content).splice(1); // Skip header row
   }
 
   if (rows.length === 0) {
@@ -98,13 +75,11 @@ export async function processDatasetFile(file: File): Promise<ParsedDataset> {
   }
 
   const rowCount = rows.length;
-  const merkleRoot = computeMerkleRoot(rows);
 
   return {
     rows,
     numColumns,
     rowCount,
-    merkleRoot,
   };
 }
 

@@ -49,29 +49,21 @@ export function DatasetDrawer({
   isOwner,
   currentUserAddress,
 }: DatasetDrawerProps) {
-  const { datasetRegistry, jobManager } = useCDMContext();
-
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const [processingJob, setProcessingJob] = useState<{
-    requestId: bigint;
-    jobId: bigint;
-    totalRows: number;
-    processedRows: number;
-  } | null>(null);
+  const [acceptedRequestId, setAcceptedRequestId] = useState<bigint | null>(
+    null
+  );
 
-  function handleJobAccepted(
-    requestId: bigint,
-    jobId: bigint,
-    totalRows: number,
-    processedRows: number
-  ) {
-    setProcessingJob({
-      requestId,
-      jobId,
-      totalRows,
-      processedRows,
-    });
+  function handleRequestAccepted(requestId: bigint) {
+    // Open the job processor modal with the accepted request ID
+    // The modal will declaratively find and match the job when it becomes available
+    setAcceptedRequestId(requestId);
+  }
+
+  function handleProcessJob(requestId: bigint) {
+    // Open the job processor modal for processing an accepted job
+    setAcceptedRequestId(requestId);
   }
 
   return (
@@ -189,7 +181,8 @@ export function DatasetDrawer({
                 jobs={activity.jobs}
                 isOwner={isOwner}
                 currentUserAddress={currentUserAddress}
-                onJobAccepted={handleJobAccepted}
+                onRequestAccepted={handleRequestAccepted}
+                onProcessJob={handleProcessJob}
               />
             </div>
           </div>
@@ -209,15 +202,14 @@ export function DatasetDrawer({
       />
 
       {/* Job Processor Modal */}
-      {processingJob && (
+      {acceptedRequestId !== null && (
         <JobProcessorModal
-          open={!!processingJob}
-          onOpenChange={(open) => !open && setProcessingJob(null)}
-          requestId={processingJob.requestId}
-          jobId={processingJob.jobId}
+          open={acceptedRequestId !== null}
+          onOpenChange={(open) => !open && setAcceptedRequestId(null)}
+          requestId={acceptedRequestId}
           datasetId={dataset.id}
-          totalRows={processingJob.totalRows}
-          processedRows={processingJob.processedRows}
+          requests={activity.requests}
+          jobs={activity.jobs}
         />
       )}
 

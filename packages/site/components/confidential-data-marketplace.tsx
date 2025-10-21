@@ -45,6 +45,7 @@ export default function ConfidentialDataMarketplace() {
   const reversedDatasets = [...datasets].reverse();
 
   // Compute dataset stats once using useMemo
+  // Now uses O(1) lookups from precomputed byDataset map
   const datasetStats = useMemo(() => {
     if (!activity) return new Map();
 
@@ -58,14 +59,11 @@ export default function ConfidentialDataMarketplace() {
     >();
 
     datasets.forEach((dataset) => {
-      const jobCount = getDatasetJobCount(dataset.id, activity.jobs);
-      const requestCount = getDatasetRequestCount(
-        dataset.id,
-        activity.requests
-      );
+      const jobCount = getDatasetJobCount(dataset.id, activity);
+      const requestCount = getDatasetRequestCount(dataset.id, activity);
       const hasUserRequest = userHasRequestForDataset(
         dataset.id,
-        activity.requests,
+        activity,
         currentUserAddress
       );
 
@@ -132,7 +130,7 @@ export default function ConfidentialDataMarketplace() {
           Loading datasets...
         </div>
       ) : datasets.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
+        <div className="text-center py-12 text-muted-foreground mx-auto">
           No datasets yet. Create one to get started!
         </div>
       ) : (

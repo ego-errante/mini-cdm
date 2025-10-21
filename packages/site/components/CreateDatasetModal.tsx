@@ -131,8 +131,8 @@ export function CreateDatasetModal({
       const encryptedRows: EncryptedRow[] = [];
       const userAddress = await ethersSigner.getAddress();
 
-      // Encrypt each row progressively. Skip the header row.
-      for (let i = 1; i < processFileMutation.data.rows.length; i++) {
+      // Encrypt each row progressively.
+      for (let i = 0; i < processFileMutation.data.rows.length; i++) {
         const rowData = processFileMutation.data.rows[i];
         const columnConfigs = parseRowToColumnConfigs(rowData);
 
@@ -154,11 +154,12 @@ export function CreateDatasetModal({
 
       // Compute merkle root from encrypted rows
       const rowStrings = encryptedRows.map((r) => r.encryptedData);
-      const { root } = generateMerkleTreeFromRows(rowStrings, id);
+      const { root, proofs } = generateMerkleTreeFromRows(rowStrings, id);
 
       const encryptedDataset: EncryptedDataset = {
         datasetId: id.toString(),
         rows: encryptedRows,
+        proofs,
         numColumns: processFileMutation.data.numColumns,
         rowCount: processFileMutation.data.rowCount,
         merkleRoot: root,

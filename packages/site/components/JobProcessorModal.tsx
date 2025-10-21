@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -14,81 +14,89 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadEncryptedDatasetFromStorage } from "@/lib/datasetUtils";
-import { EncryptedDataset, generateMerkleProof } from "@fhevm/shared";
+import {
+  EncryptedDataset,
+  generateMerkleProof,
+  JobData,
+  JobRequest,
+} from "@fhevm/shared";
 import { ethers } from "ethers";
 import { useCDMContext } from "@/hooks/useCDMContext";
+import { Loader2 } from "lucide-react";
 
 interface JobProcessorModalProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   requestId: bigint;
-  jobId: bigint;
   datasetId: bigint;
-  totalRows: number;
-  processedRows: number;
+  requests: JobRequest[];
+  jobs: JobData[];
 }
 
 export function JobProcessorModal({
   open,
   onOpenChange,
   requestId,
-  jobId,
   datasetId,
-  totalRows,
-  processedRows,
+  requests,
+  jobs,
 }: JobProcessorModalProps) {
   const { jobManager } = useCDMContext();
   const pushRowMutation = jobManager.pushRowMutation;
   const finalizeJobMutation = jobManager.finalizeJobMutation;
 
-  const [currentRowIndex, setCurrentRowIndex] = useState(processedRows);
   const [encryptedDataset, setEncryptedDataset] =
     useState<EncryptedDataset | null>(null);
-  const [error, setError] = useState<string | null>(null);
+
+  // // Get the request by ID (requestId is 1-indexed) - O(1) lookup
+  // const request = useMemo(() => {
+  //   const idx = Number(requestId) - 1;
+  //   return requests[idx] || null;
+  // }, [requests, requestId]);
+
+  // Get the matching job from the precomputed map - O(1) lookup
+  const job = useMemo(() => {
+    const activity = jobManager.getJobManagerActivity.data;
+    if (!activity?.requestToJob) return null;
+    return activity.requestToJob[requestId.toString()] || null;
+  }, [jobManager.getJobManagerActivity.data, requestId]);
+
+  // Derive job details from the matched job
+  const jobId = job?.id ?? BigInt(0);
+  const totalRows = job ? Number(job.progress.totalRows) : 0;
+  const processedRows = job ? Number(job.progress.processedRows) : 0;
+
+  const [currentRowIndex, setCurrentRowIndex] = useState(processedRows);
+
+  // Update currentRowIndex when processedRows changes
+  useEffect(() => {
+    if (job) {
+      setCurrentRowIndex(Number(job.progress.processedRows));
+    }
+  }, [job]);
 
   // Load dataset from localStorage when modal opens
   useEffect(() => {
     if (open) {
       const dataset = loadEncryptedDatasetFromStorage(datasetId.toString());
-      if (!dataset) {
-        setError(`Dataset ${datasetId.toString()} not found in local storage`);
-      } else {
-        setEncryptedDataset(dataset);
-        setCurrentRowIndex(processedRows);
-      }
+      setEncryptedDataset(dataset);
     }
-  }, [open, datasetId, processedRows]);
+  }, [open, datasetId]);
 
   function handleNextRow() {
     if (!encryptedDataset) {
-      setError("Dataset not loaded");
+      toast.error("Dataset not loaded");
       return;
     }
 
     if (currentRowIndex >= totalRows) {
-      setError("All rows have been processed");
+      toast.error("All rows have been processed");
       return;
     }
 
-    setError(null);
-
     // Get the row data for the current index
     const rowData = encryptedDataset.rows[currentRowIndex].encryptedData;
-
-    // Generate merkle proof for this row
-    const allRows = encryptedDataset.rows.map((r) => r.encryptedData);
-
-    // Compute leaf hashes
-    const leaves = allRows.map((row, index) =>
-      ethers.keccak256(
-        ethers.solidityPacked(
-          ["uint256", "uint256", "bytes"],
-          [datasetId, index, row]
-        )
-      )
-    );
-
-    const merkleProof = generateMerkleProof(leaves, currentRowIndex);
+    const merkleProof = encryptedDataset.proofs[currentRowIndex];
 
     // Push the row with success callback to increment index
     pushRowMutation.mutate(
@@ -109,9 +117,6 @@ export function JobProcessorModal({
           toast.error(
             error instanceof Error ? error.message : "Failed to push row"
           );
-          setError(
-            error instanceof Error ? error.message : "Failed to push row"
-          );
         },
       }
     );
@@ -119,11 +124,9 @@ export function JobProcessorModal({
 
   function handleFinalize() {
     if (currentRowIndex < totalRows) {
-      setError("Cannot finalize: not all rows have been processed");
+      toast.error("Cannot finalize: not all rows have been processed");
       return;
     }
-
-    setError(null);
 
     finalizeJobMutation.mutate(jobId, {
       onSuccess: () => {
@@ -135,53 +138,73 @@ export function JobProcessorModal({
         toast.error(
           error instanceof Error ? error.message : "Failed to finalize job"
         );
-        setError(
-          error instanceof Error ? error.message : "Failed to finalize job"
-        );
       },
     });
   }
 
   const progress = totalRows > 0 ? (currentRowIndex / totalRows) * 100 : 0;
   const isComplete = currentRowIndex >= totalRows;
+  const isJobAvailable = job !== null && jobId > BigInt(0);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[500px]">
+      <DialogContent className="sm:max-w-[500px] max-h-[90vh] overflow-hidden">
         <DialogHeader>
           <DialogTitle>Processing Request #{requestId.toString()}</DialogTitle>
           <DialogDescription>
-            Job ID: {jobId.toString()} | Dataset ID: {datasetId.toString()}
+            {isJobAvailable ? (
+              <>
+                Job ID: {jobId.toString()} | Dataset ID: {datasetId.toString()}
+              </>
+            ) : (
+              <>Dataset ID: {datasetId.toString()}</>
+            )}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="space-y-4 py-4">
+        <div className="space-y-4 py-4 overflow-auto">
+          {/* Job Loading State */}
+          {!isJobAvailable && (
+            <Alert>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              <AlertTitle>Loading Job...</AlertTitle>
+              <AlertDescription>
+                Waiting for the job to be created. This should only take a
+                moment.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Explanation */}
-          <Alert>
-            <AlertTitle>Job Processing</AlertTitle>
-            <AlertDescription>
-              Process each row of the dataset by clicking "Next Row". Once all
-              rows are processed, click "Finalize" to complete the job and allow
-              the buyer to retrieve the result.
-            </AlertDescription>
-          </Alert>
+          {isJobAvailable && (
+            <Alert>
+              <AlertTitle>Job Processing</AlertTitle>
+              <AlertDescription>
+                Process each row of the dataset by clicking "Next Row". Once all
+                rows are processed, click "Finalize" to complete the job and
+                allow the buyer to retrieve the result.
+              </AlertDescription>
+            </Alert>
+          )}
 
           {/* Progress Display */}
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="font-medium">Progress:</span>
-              <span>
-                {currentRowIndex} / {totalRows} rows
-              </span>
+          {isJobAvailable && (
+            <div className="space-y-2">
+              <div className="flex justify-between text-sm">
+                <span className="font-medium">Progress:</span>
+                <span>
+                  {currentRowIndex} / {totalRows} rows
+                </span>
+              </div>
+              <Progress value={progress} className="w-full" />
+              <p className="text-xs text-muted-foreground text-right">
+                {progress.toFixed(1)}% complete
+              </p>
             </div>
-            <Progress value={progress} className="w-full" />
-            <p className="text-xs text-muted-foreground text-right">
-              {progress.toFixed(1)}% complete
-            </p>
-          </div>
+          )}
 
           {/* Dataset Status */}
-          {!encryptedDataset && !error && (
+          {isJobAvailable && !encryptedDataset && (
             <Alert variant="destructive">
               <AlertTitle>Warning</AlertTitle>
               <AlertDescription>
@@ -191,16 +214,32 @@ export function JobProcessorModal({
             </Alert>
           )}
 
-          {/* Error Display */}
-          {error && (
+          {/* Push Row Error Display */}
+          {pushRowMutation.isError && (
+            <Alert variant="destructive" className="max-w-full overflow-auto">
+              <AlertTitle>Error</AlertTitle>
+              <AlertDescription>
+                {pushRowMutation.error instanceof Error
+                  ? pushRowMutation.error.message
+                  : "Failed to push row"}
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Finalize Job Error Display */}
+          {finalizeJobMutation.isError && (
             <Alert variant="destructive">
               <AlertTitle>Error</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
+              <AlertDescription>
+                {finalizeJobMutation.error instanceof Error
+                  ? finalizeJobMutation.error.message
+                  : "Failed to finalize job"}
+              </AlertDescription>
             </Alert>
           )}
 
           {/* Completion Message */}
-          {isComplete && (
+          {isJobAvailable && isComplete && (
             <Alert>
               <AlertTitle>Ready to Finalize</AlertTitle>
               <AlertDescription>
@@ -219,16 +258,17 @@ export function JobProcessorModal({
               pushRowMutation.isPending || finalizeJobMutation.isPending
             }
           >
-            Cancel
+            {isJobAvailable ? "Cancel" : "Close"}
           </Button>
-          {!isComplete ? (
+          {isJobAvailable && !isComplete && (
             <Button
               onClick={handleNextRow}
               disabled={pushRowMutation.isPending || !encryptedDataset}
             >
               {pushRowMutation.isPending ? "Processing..." : "Next Row"}
             </Button>
-          ) : (
+          )}
+          {isJobAvailable && isComplete && (
             <Button
               onClick={handleFinalize}
               disabled={finalizeJobMutation.isPending}

@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Check, X, Ban } from "lucide-react";
+import { Check, X, Ban, Play } from "lucide-react";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { truncateAddress } from "@/lib/datasetHelpers";
 
@@ -29,12 +29,8 @@ interface ActivityTableProps {
   jobs: JobData[];
   isOwner: boolean;
   currentUserAddress: string | undefined;
-  onJobAccepted?: (
-    requestId: bigint,
-    jobId: bigint,
-    totalRows: number,
-    processedRows: number
-  ) => void;
+  onRequestAccepted?: (requestId: bigint) => void;
+  onProcessJob?: (requestId: bigint) => void;
 }
 
 interface ActivityRow {
@@ -52,7 +48,8 @@ export function ActivityTable({
   jobs,
   isOwner,
   currentUserAddress,
-  onJobAccepted,
+  onRequestAccepted,
+  onProcessJob,
 }: ActivityTableProps) {
   const { jobManager } = useCDMContext();
   const acceptMutation = jobManager.acceptRequestMutation;
@@ -81,8 +78,8 @@ export function ActivityTable({
     const matchedJob = jobs.find((job) => job.id === request.jobId);
 
     activityRows.push({
-      requestId: BigInt(requests.indexOf(request) + 1),
-      jobId: matchedJob?.id,
+      requestId: request.requestId,
+      jobId: matchedJob?.jobId,
       buyer: request.buyer,
       status: request.status,
       timestamp: request.timestamp,
@@ -99,7 +96,7 @@ export function ActivityTable({
   jobs.forEach((job) => {
     if (!processedJobIds.has(job.id.toString())) {
       activityRows.push({
-        jobId: job.id,
+        jobId: job.jobId,
         buyer: job.buyer,
         job,
       });
@@ -111,20 +108,10 @@ export function ActivityTable({
       onSuccess: () => {
         toast.success("Request accepted");
 
-        // After accepting, find the corresponding job and notify parent
-        const request = requests.find(
-          (r, idx) => BigInt(idx + 1) === requestId
-        );
-        if (request && request.jobId > BigInt(0)) {
-          const job = jobs.find((j) => j.id === request.jobId);
-          if (job && onJobAccepted) {
-            onJobAccepted(
-              requestId,
-              request.jobId,
-              Number(job.progress.totalRows),
-              Number(job.progress.processedRows)
-            );
-          }
+        // Notify parent to open the job processor modal
+        // The modal will handle matching the request to its job declaratively
+        if (onRequestAccepted) {
+          onRequestAccepted(requestId);
         }
       },
       onError: (error) => {
@@ -302,6 +289,26 @@ export function ActivityTable({
                             </Button>
                           </TooltipTrigger>
                           <TooltipContent>Cancel Request</TooltipContent>
+                        </Tooltip>
+                      )}
+
+                    {/* Owner actions for accepted requests */}
+                    {isOwner &&
+                      row.request &&
+                      row.status === RequestStatus.ACCEPTED &&
+                      onProcessJob && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() => onProcessJob(row.requestId!)}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Process Job</TooltipContent>
                         </Tooltip>
                       )}
                   </div>

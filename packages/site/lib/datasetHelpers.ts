@@ -7,34 +7,44 @@ import {
 
 /**
  * Count jobs for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup
  */
-export function getDatasetJobCount(datasetId: bigint, jobs: JobData[]): number {
-  return jobs.filter((job) => job.datasetId === datasetId).length;
+export function getDatasetJobCount(
+  datasetId: bigint,
+  activity: JobManagerActivity
+): number {
+  const datasetIdStr = datasetId.toString();
+  return activity.byDataset?.[datasetIdStr]?.jobs.length ?? 0;
 }
 
 /**
  * Count requests for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup
  */
 export function getDatasetRequestCount(
   datasetId: bigint,
-  requests: JobRequest[]
+  activity: JobManagerActivity
 ): number {
-  return requests.filter((request) => request.datasetId === datasetId).length;
+  const datasetIdStr = datasetId.toString();
+  return activity.byDataset?.[datasetIdStr]?.requests.length ?? 0;
 }
 
 /**
  * Check if user has a pending or accepted request for a dataset
+ * Uses precomputed byDataset map for O(1) lookup + O(n) filter on dataset-specific requests only
  */
 export function userHasRequestForDataset(
   datasetId: bigint,
-  requests: JobRequest[],
+  activity: JobManagerActivity,
   userAddress: string | undefined
 ): boolean {
   if (!userAddress) return false;
 
+  const datasetIdStr = datasetId.toString();
+  const requests = activity.byDataset?.[datasetIdStr]?.requests ?? [];
+
   return requests.some(
     (request) =>
-      request.datasetId === datasetId &&
       request.buyer.toLowerCase() === userAddress.toLowerCase() &&
       (request.status === RequestStatus.PENDING ||
         request.status === RequestStatus.ACCEPTED)
@@ -54,17 +64,19 @@ export function isDatasetOwner(
 
 /**
  * Get all requests and jobs for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup
  */
 export function getDatasetActivity(
   datasetId: bigint,
   activity: JobManagerActivity
 ): { requests: JobRequest[]; jobs: JobData[] } {
-  const requests = activity.requests.filter(
-    (request) => request.datasetId === datasetId
-  );
-  const jobs = activity.jobs.filter((job) => job.datasetId === datasetId);
+  const datasetIdStr = datasetId.toString();
+  const datasetActivity = activity.byDataset?.[datasetIdStr];
 
-  return { requests, jobs };
+  return {
+    requests: datasetActivity?.requests ?? [],
+    jobs: datasetActivity?.jobs ?? [],
+  };
 }
 
 /**
