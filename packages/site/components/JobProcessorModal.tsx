@@ -19,10 +19,12 @@ import {
   generateMerkleProof,
   JobData,
   JobRequest,
+  RequestStatus,
 } from "@fhevm/shared";
 import { ethers } from "ethers";
 import { useCDMContext } from "@/hooks/useCDMContext";
 import { Loader2 } from "lucide-react";
+import { GasAllowanceMonitor } from "./GasAllowanceMonitor";
 
 interface JobProcessorModalProps {
   open: boolean;
@@ -48,11 +50,10 @@ export function JobProcessorModal({
   const [encryptedDataset, setEncryptedDataset] =
     useState<EncryptedDataset | null>(null);
 
-  // // Get the request by ID (requestId is 1-indexed) - O(1) lookup
-  // const request = useMemo(() => {
-  //   const idx = Number(requestId) - 1;
-  //   return requests[idx] || null;
-  // }, [requests, requestId]);
+  // Get the request by requestId
+  const request = useMemo(() => {
+    return requests.find((r) => r.requestId === requestId) || null;
+  }, [requests, requestId]);
 
   // Get the matching job from the precomputed map - O(1) lookup
   const job = useMemo(() => {
@@ -201,6 +202,11 @@ export function JobProcessorModal({
                 {progress.toFixed(1)}% complete
               </p>
             </div>
+          )}
+
+          {/* Gas Allowance Monitor (for seller to see buyer's allowance status) */}
+          {isJobAvailable && request && job && (
+            <GasAllowanceMonitor requestId={requestId} showTopUpForm={false} />
           )}
 
           {/* Dataset Status */}

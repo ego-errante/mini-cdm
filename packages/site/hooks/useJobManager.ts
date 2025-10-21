@@ -382,6 +382,29 @@ export const useJobManager = (parameters: {
     },
   });
 
+  const topUpAllowanceMutation = useMutation({
+    mutationFn: async (params: { requestId: bigint; amount: bigint }) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.topUpAllowance(params.requestId, {
+        value: params.amount,
+      });
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
   // Event listeners for automatic query invalidation
   useEffect(() => {
     if (!jobManager.address || !ethersReadonlyProvider) {
@@ -501,6 +524,7 @@ export const useJobManager = (parameters: {
     cancelRequestMutation,
     pushRowMutation,
     finalizeJobMutation,
+    topUpAllowanceMutation,
   };
 };
 

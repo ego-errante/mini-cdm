@@ -323,10 +323,8 @@ export function ActivityTable({
                         </Tooltip>
                       )}
 
-                    {/* View Result button for completed jobs */}
+                    {/* View Status/Result button for buyers */}
                     {row.request &&
-                      row.status === RequestStatus.COMPLETED &&
-                      row.job?.result?.isFinalized &&
                       currentUserAddress &&
                       row.buyer?.toLowerCase() ===
                         currentUserAddress.toLowerCase() && (
@@ -347,7 +345,13 @@ export function ActivityTable({
                               <Eye className="h-4 w-4" />
                             </Button>
                           </TooltipTrigger>
-                          <TooltipContent>View Result</TooltipContent>
+                          <TooltipContent>
+                            {row.status === RequestStatus.COMPLETED
+                              ? "View Result"
+                              : row.status === RequestStatus.ACCEPTED
+                                ? "View Progress & Manage Allowance"
+                                : "View Status"}
+                          </TooltipContent>
                         </Tooltip>
                       )}
                   </div>

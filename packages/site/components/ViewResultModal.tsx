@@ -2,7 +2,7 @@
 
 import { useState, useCallback, useEffect } from "react";
 import { ethers } from "ethers";
-import { JobData, JobRequest, Op } from "@fhevm/shared";
+import { JobData, JobRequest, Op, RequestStatus } from "@fhevm/shared";
 import { FhevmDecryptionSignature } from "@fhevm/react";
 import { useCDMContext } from "@/hooks/useCDMContext";
 import {
@@ -14,9 +14,11 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, Eye, AlertTriangle, CopyIcon } from "lucide-react";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Loader2, Eye, AlertTriangle, CopyIcon, Info } from "lucide-react";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { toast } from "sonner";
+import { GasAllowanceMonitor } from "./GasAllowanceMonitor";
 
 interface ViewResultModalProps {
   open: boolean;
@@ -379,13 +381,46 @@ export function ViewResultModal({
   const isKAnonymityFailure =
     decryptedResult && decryptedResult.result === K_ANONYMITY_SENTINEL;
 
+  // Calculate progress percentage
+  const progressPercentage =
+    job?.progress && job.progress.totalRows > BigInt(0)
+      ? Number(
+          (job.progress.processedRows * BigInt(100)) / job.progress.totalRows
+        )
+      : 0;
+
+  function getStatusBadge(status: RequestStatus) {
+    const variants: Record<
+      RequestStatus,
+      {
+        variant: "default" | "secondary" | "destructive" | "outline";
+        label: string;
+      }
+    > = {
+      [RequestStatus.PENDING]: { variant: "secondary", label: "Pending" },
+      [RequestStatus.ACCEPTED]: { variant: "default", label: "In Progress" },
+      [RequestStatus.COMPLETED]: { variant: "default", label: "Completed" },
+      [RequestStatus.REJECTED]: { variant: "destructive", label: "Rejected" },
+    };
+
+    const config = variants[status];
+    return <Badge variant={config.variant}>{config.label}</Badge>;
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Job Result</DialogTitle>
+          <DialogTitle>Job Status</DialogTitle>
           <DialogDescription>
-            View decrypted job result and parameters
+            {request?.status === RequestStatus.PENDING &&
+              "Waiting for seller to accept your request"}
+            {request?.status === RequestStatus.ACCEPTED &&
+              "Job in progress - Monitor and manage allowance"}
+            {request?.status === RequestStatus.COMPLETED &&
+              "View decrypted job result and parameters"}
+            {request?.status === RequestStatus.REJECTED &&
+              "This request was rejected by the seller"}
           </DialogDescription>
         </DialogHeader>
 
@@ -397,48 +432,90 @@ export function ViewResultModal({
             </h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div>
-                <span className="text-muted-foreground">Job ID:</span>{" "}
-                <span className="font-mono">#{job?.jobId.toString()}</span>
-              </div>
-              <div>
                 <span className="text-muted-foreground">Request ID:</span>{" "}
                 <span className="font-mono">
                   #{request?.requestId.toString()}
                 </span>
               </div>
+              {job && (
+                <div>
+                  <span className="text-muted-foreground">Job ID:</span>{" "}
+                  <span className="font-mono">#{job.jobId.toString()}</span>
+                </div>
+              )}
               <div>
                 <span className="text-muted-foreground">Dataset ID:</span>{" "}
                 <div className="flex items-center gap-2">
                   <span className="font-mono">
-                    #{truncateAddress(job?.datasetId.toString() || "", 6)}
+                    #{truncateAddress(request?.datasetId.toString() || "", 6)}
                   </span>
                   <Button
                     variant="ghost"
                     size="icon"
+                    className="h-6 w-6"
                     onClick={() => {
                       navigator.clipboard.writeText(
-                        job?.datasetId.toString() || ""
+                        request?.datasetId.toString() || ""
                       );
                       toast.success("Dataset ID copied to clipboard");
                     }}
                   >
-                    <CopyIcon size={16} />
+                    <CopyIcon size={12} />
                   </Button>
                 </div>
               </div>
               <div>
                 <span className="text-muted-foreground">Status:</span>{" "}
-                <Badge variant="default">Completed</Badge>
+                {request?.status !== undefined &&
+                  getStatusBadge(request.status)}
               </div>
             </div>
           </div>
 
+          {/* Pending Status Message */}
+          {request?.status === RequestStatus.PENDING && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertTitle>Waiting for Seller</AlertTitle>
+              <AlertDescription>
+                Your request is pending. The dataset owner needs to accept it
+                before processing can begin.
+              </AlertDescription>
+            </Alert>
+          )}
+
+          {/* Rejected Status Message */}
+          {request?.status === RequestStatus.REJECTED && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Request Rejected</AlertTitle>
+              <AlertDescription>
+                The dataset owner has rejected this request. Your payment has
+                been refunded.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Progress Section */}
-          {job?.progress && (
-            <div className="space-y-2">
-              <h3 className="text-sm font-semibold text-muted-foreground">
-                Progress
-              </h3>
+          {job?.progress && request?.status === RequestStatus.ACCEPTED && (
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-muted-foreground">
+                  Progress
+                </h3>
+                <span className="text-sm font-semibold text-primary">
+                  {progressPercentage.toFixed(1)}%
+                </span>
+              </div>
+
+              {/* Progress bar */}
+              <div className="w-full bg-secondary rounded-full h-2.5">
+                <div
+                  className="bg-primary h-2.5 rounded-full transition-all duration-300"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+
               <div className="grid grid-cols-3 gap-2 text-sm">
                 <div>
                   <span className="text-muted-foreground">Total Rows:</span>{" "}
@@ -448,18 +525,23 @@ export function ViewResultModal({
                 </div>
                 <div>
                   <span className="text-muted-foreground">Processed:</span>{" "}
-                  <span className="font-semibold">
+                  <span className="font-semibold text-green-600 dark:text-green-400">
                     {job.progress.processedRows.toString()}
                   </span>
                 </div>
                 <div>
                   <span className="text-muted-foreground">Remaining:</span>{" "}
-                  <span className="font-semibold">
+                  <span className="font-semibold text-orange-600 dark:text-orange-400">
                     {job.progress.remainingRows.toString()}
                   </span>
                 </div>
               </div>
             </div>
+          )}
+
+          {/* Gas Allowance & Top-Up Section */}
+          {request && job && request.status === RequestStatus.ACCEPTED && (
+            <GasAllowanceMonitor requestId={request.requestId} showTopUpForm />
           )}
 
           {/* Job Parameters Section */}
@@ -481,97 +563,99 @@ export function ViewResultModal({
             </div>
           )}
 
-          {/* Result Section */}
-          <div className="space-y-3">
-            <h3 className="text-sm font-semibold text-muted-foreground">
-              Encrypted Result
-            </h3>
+          {/* Result Section - Only for completed jobs */}
+          {request?.status === RequestStatus.COMPLETED && (
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-muted-foreground">
+                Encrypted Result
+              </h3>
 
-            {!decryptedResult && !error && (
-              <div className="bg-muted/50 rounded-lg p-4 text-center">
-                <Button
-                  onClick={decryptResult}
-                  disabled={!canDecrypt || isDecrypting}
-                  className="w-full"
-                >
-                  {isDecrypting ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Decrypting...
-                    </>
-                  ) : (
-                    <>
-                      <Eye className="mr-2 h-4 w-4" />
-                      Decrypt Result
-                    </>
+              {!decryptedResult && !error && (
+                <div className="bg-muted/50 rounded-lg p-4 text-center">
+                  <Button
+                    onClick={decryptResult}
+                    disabled={!canDecrypt || isDecrypting}
+                    className="w-full"
+                  >
+                    {isDecrypting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Decrypting...
+                      </>
+                    ) : (
+                      <>
+                        <Eye className="mr-2 h-4 w-4" />
+                        Decrypt Result
+                      </>
+                    )}
+                  </Button>
+                  {!canDecrypt && !isDecrypting && (
+                    <p className="text-xs text-muted-foreground mt-2">
+                      Connect your wallet to decrypt
+                    </p>
                   )}
-                </Button>
-                {!canDecrypt && !isDecrypting && (
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Connect your wallet to decrypt
-                  </p>
-                )}
-              </div>
-            )}
+                </div>
+              )}
 
-            {error && (
-              <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
-                <p className="text-sm text-destructive">{error}</p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={decryptResult}
-                  className="mt-2"
-                >
-                  Try Again
-                </Button>
-              </div>
-            )}
+              {error && (
+                <div className="bg-destructive/10 border border-destructive/20 rounded-lg p-4">
+                  <p className="text-sm text-destructive">{error}</p>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={decryptResult}
+                    className="mt-2"
+                  >
+                    Try Again
+                  </Button>
+                </div>
+              )}
 
-            {decryptedResult && (
-              <div className="space-y-3">
-                {isKAnonymityFailure ? (
-                  <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
-                    <div className="flex items-start gap-2">
-                      <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
-                      <div>
-                        <p className="font-semibold text-yellow-700 dark:text-yellow-400">
-                          K-Anonymity Requirement Not Met
-                        </p>
-                        <p className="text-sm text-yellow-600 dark:text-yellow-500 mt-1">
-                          The result was suppressed because the query did not
-                          meet the dataset&apos;s k-anonymity threshold.
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-                      <p className="text-sm text-muted-foreground mb-1">
-                        Decrypted Result:
-                      </p>
-                      <p className="text-2xl font-bold font-mono">
-                        {decryptedResult.result.toString()}
-                      </p>
-                    </div>
-
-                    {decryptedResult.isOverflow && (
-                      <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
-                        <div className="flex items-center gap-2">
-                          <AlertTriangle className="h-4 w-4 text-orange-500" />
-                          <p className="text-sm text-orange-700 dark:text-orange-400">
-                            Overflow detected during computation. Result may be
-                            inaccurate.
+              {decryptedResult && (
+                <div className="space-y-3">
+                  {isKAnonymityFailure ? (
+                    <div className="bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-4">
+                      <div className="flex items-start gap-2">
+                        <AlertTriangle className="h-5 w-5 text-yellow-500 mt-0.5" />
+                        <div>
+                          <p className="font-semibold text-yellow-700 dark:text-yellow-400">
+                            K-Anonymity Requirement Not Met
+                          </p>
+                          <p className="text-sm text-yellow-600 dark:text-yellow-500 mt-1">
+                            The result was suppressed because the query did not
+                            meet the dataset&apos;s k-anonymity threshold.
                           </p>
                         </div>
                       </div>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
+                        <p className="text-sm text-muted-foreground mb-1">
+                          Decrypted Result:
+                        </p>
+                        <p className="text-2xl font-bold font-mono">
+                          {decryptedResult.result.toString()}
+                        </p>
+                      </div>
+
+                      {decryptedResult.isOverflow && (
+                        <div className="bg-orange-500/10 border border-orange-500/20 rounded-lg p-3">
+                          <div className="flex items-center gap-2">
+                            <AlertTriangle className="h-4 w-4 text-orange-500" />
+                            <p className="text-sm text-orange-700 dark:text-orange-400">
+                              Overflow detected during computation. Result may
+                              be inaccurate.
+                            </p>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </DialogContent>
     </Dialog>
