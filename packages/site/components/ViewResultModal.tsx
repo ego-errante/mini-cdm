@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { ethers } from "ethers";
 import { JobData, JobRequest, Op, RequestStatus } from "@fhevm/shared";
 import { FhevmDecryptionSignature } from "@fhevm/react";
@@ -15,7 +15,14 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Loader2, Eye, AlertTriangle, CopyIcon, Info } from "lucide-react";
+import {
+  Loader2,
+  Eye,
+  AlertTriangle,
+  CopyIcon,
+  Info,
+  Clock,
+} from "lucide-react";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { toast } from "sonner";
 import { GasAllowanceMonitor } from "./GasAllowanceMonitor";
@@ -45,6 +52,48 @@ export function ViewResultModal({
     ethersSigner,
     jobManager,
   } = useCDMContext();
+
+  const reclaimStalledMutation = jobManager.reclaimStalledMutation;
+
+  const [currentTime, setCurrentTime] = useState(Math.floor(Date.now() / 1000));
+
+  // Update current time every second to show accurate countdown
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setCurrentTime(Math.floor(Date.now() / 1000));
+    }, 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // Check if job is stalled (24 hours = 86400 seconds)
+  const STALL_TIMEOUT = 86400;
+  const isStalled =
+    request?.status === RequestStatus.ACCEPTED &&
+    request?.timestamp !== undefined &&
+    currentTime > Number(request.timestamp) + STALL_TIMEOUT;
+
+  const timeUntilStalled =
+    request?.status === RequestStatus.ACCEPTED &&
+    request?.timestamp !== undefined
+      ? Math.max(0, Number(request.timestamp) + STALL_TIMEOUT - currentTime)
+      : 0;
+
+  function handleReclaimStalled() {
+    if (!request) return;
+
+    reclaimStalledMutation.mutate(request.requestId, {
+      onSuccess: () => {
+        toast.success("Funds reclaimed successfully");
+        onOpenChange(false);
+      },
+      onError: (error) => {
+        console.error("Failed to reclaim stalled funds:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to reclaim funds"
+        );
+      },
+    });
+  }
 
   const decryptMutation = useMutation({
     mutationFn: async () => {
@@ -354,6 +403,20 @@ export function ViewResultModal({
     return format(dsl, 0);
   }
 
+  function formatTimeRemaining(seconds: number): string {
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  }
+
   const canDecrypt =
     job?.result?.isFinalized &&
     fhevmInstance &&
@@ -475,8 +538,9 @@ export function ViewResultModal({
               <AlertTriangle className="h-4 w-4" />
               <AlertTitle>Request Rejected</AlertTitle>
               <AlertDescription>
-                The dataset owner has rejected this request. Your payment has
-                been refunded.
+                The dataset owner has rejected this request or buyer has
+                cancelled since request processing timeout has been reached.
+                Your payment has been refunded.
               </AlertDescription>
             </Alert>
           )}
@@ -527,6 +591,64 @@ export function ViewResultModal({
           {/* Gas Allowance & Top-Up Section */}
           {request && job && request.status === RequestStatus.ACCEPTED && (
             <GasAllowanceMonitor requestId={request.requestId} showTopUpForm />
+          )}
+
+          {/* Stalled Job Alert and Reclaim Button */}
+          {request?.status === RequestStatus.ACCEPTED && (
+            <>
+              {isStalled ? (
+                <Alert variant="destructive">
+                  <AlertTriangle className="h-4 w-4" />
+                  <AlertTitle>Job Stalled</AlertTitle>
+                  <AlertDescription>
+                    <div className="space-y-3">
+                      <p>
+                        This job has been inactive for more than 24 hours. You
+                        can reclaim your remaining funds (base fee + unused
+                        allowance).
+                      </p>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={handleReclaimStalled}
+                        disabled={reclaimStalledMutation.isPending}
+                      >
+                        {reclaimStalledMutation.isPending ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Reclaiming...
+                          </>
+                        ) : (
+                          <>
+                            <Clock className="mr-2 h-4 w-4" />
+                            Reclaim Stalled Funds
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </AlertDescription>
+                </Alert>
+              ) : (
+                timeUntilStalled > 0 && (
+                  <Alert>
+                    <Clock className="h-4 w-4" />
+                    <AlertTitle>Job Timer</AlertTitle>
+                    <AlertDescription>
+                      <p className="text-sm">
+                        Time until you can reclaim funds if job stalls:{" "}
+                        <span className="font-mono font-semibold">
+                          {formatTimeRemaining(timeUntilStalled)}
+                        </span>
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        If the seller doesn&apos;t complete the job within 24
+                        hours, you can reclaim your funds.
+                      </p>
+                    </AlertDescription>
+                  </Alert>
+                )
+              )}
+            </>
           )}
 
           {/* Job Parameters Section */}

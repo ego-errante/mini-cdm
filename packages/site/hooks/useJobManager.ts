@@ -405,6 +405,48 @@ export const useJobManager = (parameters: {
     },
   });
 
+  const requestPayoutMutation = useMutation({
+    mutationFn: async (requestId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.requestPayout(requestId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
+  const reclaimStalledMutation = useMutation({
+    mutationFn: async (requestId: bigint) => {
+      if (!jobManager.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const contract = new ethers.Contract(
+        jobManager.address,
+        jobManager.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.reclaimStalled(requestId);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    },
+  });
+
   // Event listeners for automatic query invalidation
   useEffect(() => {
     if (!jobManager.address || !ethersReadonlyProvider) {
@@ -525,6 +567,8 @@ export const useJobManager = (parameters: {
     pushRowMutation,
     finalizeJobMutation,
     topUpAllowanceMutation,
+    requestPayoutMutation,
+    reclaimStalledMutation,
   };
 };
 

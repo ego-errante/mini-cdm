@@ -23,7 +23,7 @@ import {
 } from "@fhevm/shared";
 import { ethers } from "ethers";
 import { useCDMContext } from "@/hooks/useCDMContext";
-import { Loader2 } from "lucide-react";
+import { Loader2, DollarSign, AlertTriangle } from "lucide-react";
 import { GasAllowanceMonitor } from "./GasAllowanceMonitor";
 
 interface JobProcessorModalProps {
@@ -46,6 +46,7 @@ export function JobProcessorModal({
   const { jobManager } = useCDMContext();
   const pushRowMutation = jobManager.pushRowMutation;
   const finalizeJobMutation = jobManager.finalizeJobMutation;
+  const requestPayoutMutation = jobManager.requestPayoutMutation;
 
   const [encryptedDataset, setEncryptedDataset] =
     useState<EncryptedDataset | null>(null);
@@ -143,6 +144,20 @@ export function JobProcessorModal({
     });
   }
 
+  function handleRequestPayout() {
+    requestPayoutMutation.mutate(requestId, {
+      onSuccess: () => {
+        toast.success("Payout requested successfully");
+      },
+      onError: (error) => {
+        console.error("Failed to request payout:", error);
+        toast.error(
+          error instanceof Error ? error.message : "Failed to request payout"
+        );
+      },
+    });
+  }
+
   const progress = totalRows > 0 ? (currentRowIndex / totalRows) * 100 : 0;
   const isComplete = currentRowIndex >= totalRows;
   const isJobAvailable = job !== null && jobId > BigInt(0);
@@ -165,7 +180,7 @@ export function JobProcessorModal({
 
         <div className="space-y-4 py-4 overflow-auto">
           {/* Job Loading State */}
-          {!isJobAvailable && (
+          {!isJobAvailable && request?.status !== RequestStatus.REJECTED && (
             <Alert>
               <Loader2 className="h-4 w-4 animate-spin" />
               <AlertTitle>Loading Job...</AlertTitle>
@@ -176,8 +191,21 @@ export function JobProcessorModal({
             </Alert>
           )}
 
+          {/* Request Cancelled/Rejected Alert */}
+          {request?.status === RequestStatus.REJECTED && (
+            <Alert variant="destructive">
+              <AlertTriangle className="h-4 w-4" />
+              <AlertTitle>Request Cancelled</AlertTitle>
+              <AlertDescription>
+                This request has been cancelled. The buyer may have cancelled it
+                or reclaimed funds after the 24-hour timeout. Any gas costs you
+                incurred should have been paid out.
+              </AlertDescription>
+            </Alert>
+          )}
+
           {/* Explanation */}
-          {isJobAvailable && (
+          {isJobAvailable && request?.status !== RequestStatus.REJECTED && (
             <Alert>
               <AlertTitle>Job Processing</AlertTitle>
               <AlertDescription>
@@ -189,7 +217,7 @@ export function JobProcessorModal({
           )}
 
           {/* Progress Display */}
-          {isJobAvailable && (
+          {isJobAvailable && request?.status !== RequestStatus.REJECTED && (
             <div className="space-y-2">
               <div className="flex justify-between text-sm">
                 <span className="font-medium">Progress:</span>
@@ -205,55 +233,105 @@ export function JobProcessorModal({
           )}
 
           {/* Gas Allowance Monitor (for seller to see buyer's allowance status) */}
-          {isJobAvailable && request && job && (
-            <GasAllowanceMonitor requestId={requestId} showTopUpForm={false} />
-          )}
+          {isJobAvailable &&
+            request &&
+            job &&
+            request.status !== RequestStatus.REJECTED && (
+              <>
+                <GasAllowanceMonitor
+                  requestId={requestId}
+                  showTopUpForm={false}
+                />
+
+                {/* Manual Payout Button for Seller */}
+                {request.gasDebtToSeller > BigInt(0) && (
+                  <Alert>
+                    <DollarSign className="h-4 w-4" />
+                    <AlertTitle>Gas Debt Owed</AlertTitle>
+                    <AlertDescription>
+                      <div className="space-y-2">
+                        <p>
+                          Accumulated gas debt:{" "}
+                          <span className="font-mono font-semibold">
+                            {ethers.formatEther(request.gasDebtToSeller)} ETH
+                          </span>
+                        </p>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={handleRequestPayout}
+                          disabled={requestPayoutMutation.isPending}
+                        >
+                          {requestPayoutMutation.isPending ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Requesting Payout...
+                            </>
+                          ) : (
+                            <>
+                              <DollarSign className="mr-2 h-4 w-4" />
+                              Request Payout
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </>
+            )}
 
           {/* Dataset Status */}
-          {isJobAvailable && !encryptedDataset && (
-            <Alert variant="destructive">
-              <AlertTitle>Warning</AlertTitle>
-              <AlertDescription>
-                Dataset not found in local storage. Make sure you have the
-                encrypted dataset available.
-              </AlertDescription>
-            </Alert>
-          )}
+          {isJobAvailable &&
+            !encryptedDataset &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Alert variant="destructive">
+                <AlertTitle>Warning</AlertTitle>
+                <AlertDescription>
+                  Dataset not found in local storage. Make sure you have the
+                  encrypted dataset available.
+                </AlertDescription>
+              </Alert>
+            )}
 
           {/* Push Row Error Display */}
-          {pushRowMutation.isError && (
-            <Alert variant="destructive" className="max-w-full overflow-auto">
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                {pushRowMutation.error instanceof Error
-                  ? pushRowMutation.error.message
-                  : "Failed to push row"}
-              </AlertDescription>
-            </Alert>
-          )}
+          {pushRowMutation.isError &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Alert variant="destructive" className="max-w-full overflow-auto">
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>
+                  {pushRowMutation.error instanceof Error
+                    ? pushRowMutation.error.message
+                    : "Failed to push row"}
+                </AlertDescription>
+              </Alert>
+            )}
 
           {/* Finalize Job Error Display */}
-          {finalizeJobMutation.isError && (
-            <Alert variant="destructive">
-              <AlertTitle>Error</AlertTitle>
-              <AlertDescription>
-                {finalizeJobMutation.error instanceof Error
-                  ? finalizeJobMutation.error.message
-                  : "Failed to finalize job"}
-              </AlertDescription>
-            </Alert>
-          )}
+          {finalizeJobMutation.isError &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Alert variant="destructive">
+                <AlertTitle>Error</AlertTitle>
+                <AlertDescription>
+                  {finalizeJobMutation.error instanceof Error
+                    ? finalizeJobMutation.error.message
+                    : "Failed to finalize job"}
+                </AlertDescription>
+              </Alert>
+            )}
 
           {/* Completion Message */}
-          {isJobAvailable && isComplete && (
-            <Alert>
-              <AlertTitle>Ready to Finalize</AlertTitle>
-              <AlertDescription>
-                All rows have been processed. Click "Finalize Job" to complete
-                the job execution.
-              </AlertDescription>
-            </Alert>
-          )}
+          {isJobAvailable &&
+            isComplete &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Alert>
+                <AlertTitle>Ready to Finalize</AlertTitle>
+                <AlertDescription>
+                  All rows have been processed. Click "Finalize Job" to complete
+                  the job execution.
+                </AlertDescription>
+              </Alert>
+            )}
         </div>
 
         <DialogFooter>
@@ -264,24 +342,32 @@ export function JobProcessorModal({
               pushRowMutation.isPending || finalizeJobMutation.isPending
             }
           >
-            {isJobAvailable ? "Cancel" : "Close"}
+            {isJobAvailable && request?.status !== RequestStatus.REJECTED
+              ? "Cancel"
+              : "Close"}
           </Button>
-          {isJobAvailable && !isComplete && (
-            <Button
-              onClick={handleNextRow}
-              disabled={pushRowMutation.isPending || !encryptedDataset}
-            >
-              {pushRowMutation.isPending ? "Processing..." : "Next Row"}
-            </Button>
-          )}
-          {isJobAvailable && isComplete && (
-            <Button
-              onClick={handleFinalize}
-              disabled={finalizeJobMutation.isPending}
-            >
-              {finalizeJobMutation.isPending ? "Finalizing..." : "Finalize Job"}
-            </Button>
-          )}
+          {isJobAvailable &&
+            !isComplete &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Button
+                onClick={handleNextRow}
+                disabled={pushRowMutation.isPending || !encryptedDataset}
+              >
+                {pushRowMutation.isPending ? "Processing..." : "Next Row"}
+              </Button>
+            )}
+          {isJobAvailable &&
+            isComplete &&
+            request?.status !== RequestStatus.REJECTED && (
+              <Button
+                onClick={handleFinalize}
+                disabled={finalizeJobMutation.isPending}
+              >
+                {finalizeJobMutation.isPending
+                  ? "Finalizing..."
+                  : "Finalize Job"}
+              </Button>
+            )}
         </DialogFooter>
       </DialogContent>
     </Dialog>
