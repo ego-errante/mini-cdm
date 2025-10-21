@@ -207,10 +207,9 @@ export const useJobManager = (parameters: {
       });
 
       // Create requestId -> job lookup for O(1) access in JobProcessorModal
-      // requestId is 1-indexed position in the requests array
       const requestToJob: Record<string, JobData | null> = {};
-      filteredRequests.forEach((request, idx) => {
-        const requestId = (idx + 1).toString();
+      filteredRequests.forEach((request) => {
+        const requestId = request.requestId.toString();
         // Find the job linked to this request via jobId
         const job =
           request.jobId > BigInt(0)

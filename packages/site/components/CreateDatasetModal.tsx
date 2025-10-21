@@ -70,9 +70,9 @@ export function CreateDatasetModal({
 
   // Hooks
   const queryClient = useQueryClient();
-  const { datasetRegistry, fhevmInstance, ethersSigner } = useCDMContext();
-  const { commitDatasetMutation, getDatasetsQuery, contractAddress } =
-    datasetRegistry;
+  const { datasetRegistry, jobManager, fhevmInstance, ethersSigner } =
+    useCDMContext();
+  const { commitDatasetMutation, getDatasetsQuery } = datasetRegistry;
 
   // Encryption state
   const [encryptionProgress, setEncryptionProgress] = useState({
@@ -118,7 +118,8 @@ export function CreateDatasetModal({
       if (
         !processFileMutation.data ||
         !fhevmInstance ||
-        !contractAddress ||
+        !datasetRegistry.contractAddress ||
+        !jobManager.contractAddress ||
         !ethersSigner
       ) {
         throw new Error("Missing required data for encryption");
@@ -137,7 +138,7 @@ export function CreateDatasetModal({
         const columnConfigs = parseRowToColumnConfigs(rowData);
 
         const encryptedData = await createPackedEncryptedRow(
-          contractAddress,
+          jobManager.contractAddress,
           userAddress,
           fhevmInstance,
           columnConfigs
@@ -360,7 +361,8 @@ export function CreateDatasetModal({
                       disabled={
                         encryptDatasetMutation.isPending ||
                         !fhevmInstance ||
-                        !contractAddress ||
+                        !datasetRegistry.contractAddress ||
+                        !jobManager.contractAddress ||
                         !ethersSigner
                       }
                       className="w-full"
