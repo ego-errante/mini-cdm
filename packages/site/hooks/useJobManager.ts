@@ -399,17 +399,14 @@ export const useJobManager = (parameters: {
       buyer: string,
       datasetId: bigint
     ) => {
-      console.log("RequestSubmitted event:", { requestId, buyer, datasetId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRequestAccepted = (requestId: bigint, jobId: bigint) => {
-      console.log("RequestAccepted event:", { requestId, jobId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRequestRejected = (requestId: bigint) => {
-      console.log("RequestRejected event:", { requestId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
@@ -418,12 +415,10 @@ export const useJobManager = (parameters: {
       datasetId: bigint,
       buyer: string
     ) => {
-      console.log("JobOpened event:", { jobId, datasetId, buyer });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRowPushed = (jobId: bigint) => {
-      console.log("RowPushed event:", { jobId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
@@ -433,27 +428,22 @@ export const useJobManager = (parameters: {
       result: any,
       isOverflow: any
     ) => {
-      console.log("JobFinalized event:", { jobId, buyer, result, isOverflow });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRequestCompleted = (requestId: bigint, jobId: bigint) => {
-      console.log("RequestCompleted event:", { requestId, jobId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRequestCancelled = (requestId: bigint) => {
-      console.log("RequestCancelled event:", { requestId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleRequestStalled = (requestId: bigint) => {
-      console.log("RequestStalled event:", { requestId });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleAllowanceToppedUp = (requestId: bigint, amount: bigint) => {
-      console.log("AllowanceToppedUp event:", { requestId, amount });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
@@ -462,12 +452,10 @@ export const useJobManager = (parameters: {
       seller: string,
       amount: bigint
     ) => {
-      console.log("SellerPaid event:", { requestId, seller, amount });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
     const handleThresholdUpdated = (newThreshold: bigint) => {
-      console.log("ThresholdUpdated event:", { newThreshold });
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 

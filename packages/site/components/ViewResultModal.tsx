@@ -173,9 +173,13 @@ export function ViewResultModal({
 
     // Filter info
     if (params.filter.bytecode && params.filter.bytecode !== "0x") {
+      const dsl = bytecodeToDSL(
+        params.filter.bytecode,
+        params.filter.consts.map((c) => Number(c))
+      );
       items.push({
-        label: "Filter",
-        value: `${params.filter.bytecode.length / 2 - 1} bytes`,
+        label: "Filter DSL",
+        value: dsl,
       });
       if (params.filter.consts.length > 0) {
         items.push({
@@ -186,6 +190,182 @@ export function ViewResultModal({
     }
 
     return items;
+  }
+
+  // Filter DSL bytecode opcodes (reverse mapping)
+  const reverseOpcodes: Record<number, string> = {
+    0x01: "PUSH_FIELD",
+    0x02: "PUSH_CONST",
+    0x10: "GT",
+    0x11: "GE",
+    0x12: "LT",
+    0x13: "LE",
+    0x14: "EQ",
+    0x15: "NE",
+    0x20: "AND",
+    0x21: "OR",
+    0x22: "NOT",
+  };
+
+  type FilterDSL =
+    | ["GT" | "GE" | "LT" | "LE" | "EQ" | "NE", number, number]
+    | ["AND" | "OR", FilterDSL, FilterDSL]
+    | ["NOT", FilterDSL];
+
+  function bytecodeToDSL(bytecode: string, consts: number[]): string {
+    try {
+      if (!bytecode || bytecode === "0x") {
+        return "No filter";
+      }
+
+      // Remove 0x prefix and convert to byte array
+      const bytes = bytecode.startsWith("0x")
+        ? bytecode
+            .slice(2)
+            .match(/.{2}/g)
+            ?.map((b) => parseInt(b, 16)) || []
+        : [];
+
+      let pc = 0; // Program counter
+      const stack: (number | FilterDSL)[] = []; // Can contain field indices or DSL expressions
+
+      while (pc < bytes.length) {
+        const opcode = bytes[pc++];
+        const opName = reverseOpcodes[opcode];
+
+        if (!opName) {
+          throw new Error(`Unknown opcode: 0x${opcode.toString(16)}`);
+        }
+
+        switch (opcode) {
+          case 0x01: {
+            // PUSH_FIELD
+            if (pc + 1 >= bytes.length)
+              throw new Error("Incomplete PUSH_FIELD");
+            const fieldIndex = (bytes[pc] << 8) | bytes[pc + 1];
+            pc += 2;
+            stack.push(fieldIndex); // Push field index as number
+            break;
+          }
+          case 0x02: {
+            // PUSH_CONST
+            if (pc + 1 >= bytes.length)
+              throw new Error("Incomplete PUSH_CONST");
+            const constIndex = (bytes[pc] << 8) | bytes[pc + 1];
+            pc += 2;
+            if (constIndex >= consts.length)
+              throw new Error(`Invalid const index: ${constIndex}`);
+            stack.push(consts[constIndex]); // Push constant value as number
+            break;
+          }
+          case 0x10: // GT
+          case 0x11: // GE
+          case 0x12: // LT
+          case 0x13: // LE
+          case 0x14: // EQ
+          case 0x15: {
+            // NE
+            if (stack.length < 2)
+              throw new Error(`Not enough operands for ${opName}`);
+            const value = stack.pop()!;
+            const fieldIndex = stack.pop()!;
+
+            if (typeof fieldIndex !== "number" || typeof value !== "number") {
+              throw new Error(
+                `Invalid operands for ${opName}: expected numbers`
+              );
+            }
+
+            stack.push([
+              opName as "GT" | "GE" | "LT" | "LE" | "EQ" | "NE",
+              fieldIndex,
+              value,
+            ]);
+            break;
+          }
+          case 0x20: // AND
+          case 0x21: {
+            // OR
+            if (stack.length < 2)
+              throw new Error(`Not enough operands for ${opName}`);
+            const right = stack.pop()!;
+            const left = stack.pop()!;
+
+            if (typeof left === "number" || typeof right === "number") {
+              throw new Error(
+                `Invalid operands for ${opName}: expected DSL expressions`
+              );
+            }
+
+            stack.push([opcode === 0x20 ? "AND" : "OR", left, right]);
+            break;
+          }
+          case 0x22: {
+            // NOT
+            if (stack.length < 1)
+              throw new Error(`Not enough operands for ${opName}`);
+            const operand = stack.pop()!;
+
+            if (typeof operand === "number") {
+              throw new Error(
+                `Invalid operand for ${opName}: expected DSL expression`
+              );
+            }
+
+            stack.push(["NOT", operand]);
+            break;
+          }
+          default:
+            throw new Error(`Unhandled opcode: ${opName}`);
+        }
+      }
+
+      if (stack.length !== 1) {
+        throw new Error(
+          `Invalid bytecode: stack should have exactly 1 element, got ${stack.length}`
+        );
+      }
+
+      const result = stack[0];
+      if (typeof result === "number") {
+        throw new Error(
+          "Invalid bytecode: final result should be a DSL expression"
+        );
+      }
+
+      return prettyPrintDSL(result);
+    } catch (error) {
+      console.error("Failed to parse filter bytecode:", error);
+      return `Error parsing bytecode: ${error instanceof Error ? error.message : "Unknown error"}`;
+    }
+  }
+
+  function prettyPrintDSL(dsl: FilterDSL): string {
+    function format(expr: FilterDSL, indent: number = 0): string {
+      const spaces = "  ".repeat(indent);
+
+      if (expr[0] === "NOT") {
+        return `${spaces}NOT (\n${format(expr[1] as FilterDSL, indent + 1)}\n${spaces})`;
+      } else if (expr[0] === "AND" || expr[0] === "OR") {
+        const left = format(expr[1] as FilterDSL, indent + 1);
+        const right = format(expr[2] as FilterDSL, indent + 1);
+        return `${spaces}(\n${left}\n${spaces}${expr[0]}\n${right}\n${spaces})`;
+      } else {
+        // Comparison: [op, fieldIndex, value]
+        const [op, fieldIndex, value] = expr;
+        const opSymbols: Record<string, string> = {
+          GT: ">",
+          GE: ">=",
+          LT: "<",
+          LE: "<=",
+          EQ: "==",
+          NE: "!=",
+        };
+        return `${spaces}field[${fieldIndex}] ${opSymbols[op]} ${value}`;
+      }
+    }
+
+    return format(dsl, 0);
   }
 
   const canDecrypt =

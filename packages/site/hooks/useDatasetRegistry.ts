@@ -200,17 +200,14 @@ export const useDatasetRegistry = (parameters: {
     );
 
     const handleDatasetCommitted = (datasetId: bigint, owner: string) => {
-      console.log("DatasetCommitted event:", { datasetId, owner });
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     };
 
     const handleDatasetDeleted = (datasetId: bigint, owner: string) => {
-      console.log("DatasetDeleted event:", { datasetId, owner });
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     };
 
     const handleJobManagerSet = (jobManager: string) => {
-      console.log("JobManagerSet event:", { jobManager });
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     };
 
