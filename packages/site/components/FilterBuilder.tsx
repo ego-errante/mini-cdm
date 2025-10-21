@@ -131,7 +131,6 @@ export function FilterBuilder({
         }
       }
 
-      console.log("finalDSL", finalDSL);
       // Compile to bytecode
       const compiled = compileFilterDSL(finalDSL);
       onFilterChange(compiled);

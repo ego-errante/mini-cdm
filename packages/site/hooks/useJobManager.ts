@@ -413,16 +413,92 @@ export const useJobManager = (parameters: {
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
     };
 
+    const handleJobOpened = (
+      jobId: bigint,
+      datasetId: bigint,
+      buyer: string
+    ) => {
+      console.log("JobOpened event:", { jobId, datasetId, buyer });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRowPushed = (jobId: bigint) => {
+      console.log("RowPushed event:", { jobId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleJobFinalized = (
+      jobId: bigint,
+      buyer: string,
+      result: any,
+      isOverflow: any
+    ) => {
+      console.log("JobFinalized event:", { jobId, buyer, result, isOverflow });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRequestCompleted = (requestId: bigint, jobId: bigint) => {
+      console.log("RequestCompleted event:", { requestId, jobId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRequestCancelled = (requestId: bigint) => {
+      console.log("RequestCancelled event:", { requestId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleRequestStalled = (requestId: bigint) => {
+      console.log("RequestStalled event:", { requestId });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleAllowanceToppedUp = (requestId: bigint, amount: bigint) => {
+      console.log("AllowanceToppedUp event:", { requestId, amount });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleSellerPaid = (
+      requestId: bigint,
+      seller: string,
+      amount: bigint
+    ) => {
+      console.log("SellerPaid event:", { requestId, seller, amount });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
+    const handleThresholdUpdated = (newThreshold: bigint) => {
+      console.log("ThresholdUpdated event:", { newThreshold });
+      queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
+    };
+
     // Attach event listeners
     contract.on("RequestSubmitted", handleRequestSubmitted);
     contract.on("RequestAccepted", handleRequestAccepted);
     contract.on("RequestRejected", handleRequestRejected);
+    contract.on("JobOpened", handleJobOpened);
+    contract.on("RowPushed", handleRowPushed);
+    contract.on("JobFinalized", handleJobFinalized);
+    contract.on("RequestCompleted", handleRequestCompleted);
+    contract.on("RequestCancelled", handleRequestCancelled);
+    contract.on("RequestStalled", handleRequestStalled);
+    contract.on("AllowanceToppedUp", handleAllowanceToppedUp);
+    contract.on("SellerPaid", handleSellerPaid);
+    contract.on("ThresholdUpdated", handleThresholdUpdated);
 
     // Cleanup function
     return () => {
       contract.off("RequestSubmitted", handleRequestSubmitted);
       contract.off("RequestAccepted", handleRequestAccepted);
       contract.off("RequestRejected", handleRequestRejected);
+      contract.off("JobOpened", handleJobOpened);
+      contract.off("RowPushed", handleRowPushed);
+      contract.off("JobFinalized", handleJobFinalized);
+      contract.off("RequestCompleted", handleRequestCompleted);
+      contract.off("RequestCancelled", handleRequestCancelled);
+      contract.off("RequestStalled", handleRequestStalled);
+      contract.off("AllowanceToppedUp", handleAllowanceToppedUp);
+      contract.off("SellerPaid", handleSellerPaid);
+      contract.off("ThresholdUpdated", handleThresholdUpdated);
     };
   }, [jobManager.address, ethersReadonlyProvider, queryClient]);
 

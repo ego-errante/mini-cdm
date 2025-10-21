@@ -209,14 +209,21 @@ export const useDatasetRegistry = (parameters: {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     };
 
+    const handleJobManagerSet = (jobManager: string) => {
+      console.log("JobManagerSet event:", { jobManager });
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    };
+
     // Attach event listeners
     contract.on("DatasetCommitted", handleDatasetCommitted);
     contract.on("DatasetDeleted", handleDatasetDeleted);
+    contract.on("JobManagerSet", handleJobManagerSet);
 
     // Cleanup function
     return () => {
       contract.off("DatasetCommitted", handleDatasetCommitted);
       contract.off("DatasetDeleted", handleDatasetDeleted);
+      contract.off("JobManagerSet", handleJobManagerSet);
     };
   }, [datasetRegistry.address, ethersReadonlyProvider, queryClient]);
 

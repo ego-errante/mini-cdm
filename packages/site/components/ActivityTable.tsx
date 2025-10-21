@@ -20,8 +20,9 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Check, X, Ban, Play } from "lucide-react";
+import { Check, X, Ban, Play, Eye } from "lucide-react";
 import { ConfirmationModal } from "./ConfirmationModal";
+import { ViewResultModal } from "./ViewResultModal";
 import { truncateAddress } from "@/lib/datasetHelpers";
 
 interface ActivityTableProps {
@@ -67,6 +68,16 @@ export function ActivityTable({
     description: "",
     onConfirm: async () => {},
     variant: "default",
+  });
+
+  const [viewResultModal, setViewResultModal] = useState<{
+    open: boolean;
+    request: JobRequest | undefined;
+    job: JobData | undefined;
+  }>({
+    open: false,
+    request: undefined,
+    job: undefined,
   });
 
   // Create activity rows by matching requests and jobs
@@ -311,6 +322,34 @@ export function ActivityTable({
                           <TooltipContent>Process Job</TooltipContent>
                         </Tooltip>
                       )}
+
+                    {/* View Result button for completed jobs */}
+                    {row.request &&
+                      row.status === RequestStatus.COMPLETED &&
+                      row.job?.result?.isFinalized &&
+                      currentUserAddress &&
+                      row.buyer?.toLowerCase() ===
+                        currentUserAddress.toLowerCase() && (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              size="icon"
+                              variant="ghost"
+                              className="h-8 w-8"
+                              onClick={() =>
+                                setViewResultModal({
+                                  open: true,
+                                  request: row.request,
+                                  job: row.job,
+                                })
+                              }
+                            >
+                              <Eye className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>View Result</TooltipContent>
+                        </Tooltip>
+                      )}
                   </div>
                 </TableCell>
               </TableRow>
@@ -326,6 +365,15 @@ export function ActivityTable({
         description={confirmModal.description}
         onConfirm={confirmModal.onConfirm}
         variant={confirmModal.variant}
+      />
+
+      <ViewResultModal
+        open={viewResultModal.open}
+        onOpenChange={(open) =>
+          setViewResultModal({ ...viewResultModal, open })
+        }
+        request={viewResultModal.request}
+        job={viewResultModal.job}
       />
     </>
   );
