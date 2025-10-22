@@ -14,10 +14,15 @@ import {
   Network,
   Shield,
   Info,
+  ChevronDown,
+  Copy,
 } from "lucide-react";
 import { useState } from "react";
 import { StatusBadgeProps } from "./StatusBadgeTypes";
 import { cn } from "@/lib/utils";
+import { truncateAddress } from "@/lib/datasetHelpers";
+import { Button } from "./ui/button";
+import { toast } from "sonner";
 
 /**
  * Clickable badges that open detailed information panels.
@@ -33,6 +38,7 @@ export function StatusBadgesPopover({
 }: StatusBadgeProps & { className?: string }) {
   const [chainOpen, setChainOpen] = useState(false);
   const [fhevmOpen, setFhevmOpen] = useState(false);
+  const [accountsExpanded, setAccountsExpanded] = useState(false);
 
   const allContractsDeployed = contracts?.every((c) => c.isDeployed);
   const chainStatus = chainId && allContractsDeployed;
@@ -52,8 +58,8 @@ export function StatusBadgesPopover({
             <Info className="h-2.5 w-2.5 ml-0.5 opacity-60" />
           </Badge>
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-72 ">
-          <div className="space-y-3">
+        <PopoverContent align="end" className="w-80 overflow-hidden">
+          <div className="space-y-3 overflow-hidden">
             <div className="flex items-center gap-2">
               <div
                 className={`h-2 w-2 rounded-full ${chainStatus ? "bg-green-500" : "bg-red-500"}`}
@@ -63,7 +69,7 @@ export function StatusBadgesPopover({
 
             <Separator />
 
-            <div className="grid gap-2 text-xs">
+            <div className="grid gap-2 text-xs overflow-hidden">
               <div className="flex justify-between items-center p-2 rounded-md bg-muted/50">
                 <span className="text-muted-foreground">Chain ID</span>
                 <span className="font-mono font-semibold">
@@ -71,11 +77,78 @@ export function StatusBadgesPopover({
                 </span>
               </div>
 
-              <div className="flex justify-between items-center p-2 rounded-md bg-muted/50">
-                <span className="text-muted-foreground">Accounts</span>
-                <span className="font-semibold">
-                  {accounts?.length || 0} connected
-                </span>
+              <div className="p-2 rounded-md bg-muted/50 space-y-2 overflow-hidden">
+                <div className="flex justify-between items-center">
+                  <span className="text-muted-foreground">Accounts</span>
+
+                  {accounts && accounts.length > 0 && (
+                    <div className="flex items-center gap-2">
+                      {accounts.length === 1 ? (
+                        <div className="flex items-center gap-1">
+                          <span className="font-mono text-xs">
+                            {truncateAddress(accounts[0], 6)}
+                          </span>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="!size-7"
+                            onClick={() => {
+                              navigator.clipboard.writeText(accounts[0]);
+                              toast.success("Address copied to clipboard");
+                            }}
+                          >
+                            <Copy className="!size-3" />
+                          </Button>
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setAccountsExpanded(!accountsExpanded)}
+                        >
+                          <Badge
+                            variant="outline"
+                            className="text-xs px-1 py-0 h-4 gap-1"
+                          >
+                            {accounts.length} connected
+                            <ChevronDown className="size-4" />
+                          </Badge>
+                        </button>
+                      )}
+                    </div>
+                  )}
+                </div>
+
+                {accounts && accounts.length > 0 ? (
+                  <>
+                    {accountsExpanded && accounts.length > 1 && (
+                      <div className="space-y-1 pt-2 border-t border-muted">
+                        {accounts.map((account) => (
+                          <div
+                            key={account}
+                            className="flex items-center gap-1"
+                          >
+                            <span className="font-mono text-xs text-muted-foreground truncate">
+                              {account}
+                            </span>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              onClick={() => {
+                                navigator.clipboard.writeText(account);
+                                toast.success("Address copied to clipboard");
+                              }}
+                            >
+                              <Copy className="!size-3" />
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <span className="font-semibold text-muted-foreground">
+                    Not connected
+                  </span>
+                )}
               </div>
 
               {contracts?.map((contract, index) => (
@@ -88,7 +161,7 @@ export function StatusBadgesPopover({
                       {contract.name}
                     </span>
 
-                    <div className="flex gap-1">
+                    <div className="flex items-center gap-1">
                       {contract.isDeployed ? (
                         <span className="flex items-center gap-1.5 text-green-600 font-medium">
                           <CheckCircle2 className="h-3.5 w-3.5" />
@@ -105,12 +178,22 @@ export function StatusBadgesPopover({
                         title={contract.address}
                       >
                         {contract.address
-                          ? `${contract.address.slice(
-                              0,
-                              6
-                            )}...${contract.address.slice(-4)}`
+                          ? truncateAddress(contract.address)
                           : "N/A"}
                       </span>
+                      {contract.address && (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="!size-6"
+                          onClick={() => {
+                            navigator.clipboard.writeText(contract.address!);
+                            toast.success("Address copied to clipboard");
+                          }}
+                        >
+                          <Copy className="!size-3" />
+                        </Button>
+                      )}
                     </div>
                   </div>
                 </div>
