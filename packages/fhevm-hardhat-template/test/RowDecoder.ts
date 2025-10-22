@@ -2,6 +2,8 @@ import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
 import { RowDecoderTestHelper, RowDecoderTestHelper__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
+import { packEncryptedField, joinPacked, createPackedEncryptedRow, encryptValues } from "@fhevm/shared";
+import { createPackedEncryptedTable } from "./utils";
 
 describe("RowDecoder Library", function () {
   let signers: Signers;
@@ -168,7 +170,7 @@ describe("RowDecoder Library", function () {
   describe("decodeRowTo64", () => {
     it("should decode a single uint8 field", async () => {
       const contractAddress = await decoderTestHelper.getAddress();
-      const rowPacked = await createPackedEncryptedRow(contractAddress, signers.alice, [
+      const rowPacked = await createPackedEncryptedRow(contractAddress, signers.alice.address, fhevm, [
         { type: "euint8", value: 123 },
       ]);
 
@@ -255,98 +257,4 @@ async function deployFixture() {
   return { decoderTestHelper };
 }
 
-export async function createPackedEncryptedTable(
-  contractAddress: string,
-  signer: HardhatEthersSigner,
-  cells: {
-    type: "euint8" | "euint32" | "euint64";
-    value: number;
-  }[],
-  columns: number,
-): Promise<string[]> {
-  const { handles, inputProof, typeTags } = await encryptValues(contractAddress, signer, cells);
-
-  let packedMatrix: string[][] = [];
-  for (let i = 0; i < cells.length; i++) {
-    const rowIndex = Math.floor(i / columns);
-    if (packedMatrix.length < rowIndex + 1) packedMatrix.push([]);
-    packedMatrix[rowIndex].push(await packEncryptedField(Number(typeTags[i]), handles[i], inputProof));
-  }
-
-  const packedRows: string[] = [];
-  for (const row of packedMatrix) {
-    packedRows.push(joinPacked(row));
-  }
-
-  return packedRows;
-}
-
-export async function createPackedEncryptedRow(
-  contractAddress: string,
-  signer: HardhatEthersSigner,
-  columns: {
-    type: "euint8" | "euint32" | "euint64";
-    value: number;
-  }[],
-): Promise<string> {
-  const { handles, inputProof, typeTags } = await encryptValues(contractAddress, signer, columns);
-
-  let packed: string[] = [];
-  for (let i = 0; i < columns.length; i++) {
-    packed.push(await packEncryptedField(Number(typeTags[i]), handles[i], inputProof));
-  }
-
-  return joinPacked(packed);
-}
-
-async function encryptValues(
-  contractAddress: string,
-  signer: HardhatEthersSigner,
-  values: {
-    type: "euint8" | "euint32" | "euint64";
-    value: number;
-  }[],
-): Promise<{ handles: Uint8Array[]; inputProof: Uint8Array; typeTags: string[] }> {
-  const input = fhevm.createEncryptedInput(contractAddress, signer.address);
-
-  const typeTags: string[] = [];
-  for (const item of values) {
-    switch (item.type) {
-      case "euint8":
-        input.add8(item.value);
-        typeTags.push("01");
-        break;
-      case "euint32":
-        input.add32(item.value);
-        typeTags.push("02");
-        break;
-      case "euint64":
-        input.add64(item.value);
-        typeTags.push("03");
-        break;
-    }
-  }
-
-  const encrypted = await input.encrypt();
-
-  return { handles: encrypted.handles, inputProof: encrypted.inputProof, typeTags };
-}
-
-function joinPacked(packed: string[]): string {
-  return "0x" + packed.join("");
-}
-
-export async function packEncryptedField(typeTag: number, handle: Uint8Array, proof: Uint8Array): Promise<string> {
-  const extCipherHex = ethers.hexlify(handle);
-  const proofHex = ethers.hexlify(proof);
-
-  const extCipherBytes = extCipherHex.substring(2);
-  const proofBytes = proofHex.substring(2);
-
-  const extLen = (extCipherBytes.length / 2).toString(16).padStart(4, "0");
-  const proofLen = (proofBytes.length / 2).toString(16).padStart(4, "0");
-
-  const typeTagHex = typeTag.toString(16).padStart(2, "0");
-
-  return typeTagHex + extLen + extCipherBytes + proofLen + proofBytes;
-}
+// Note: joinPacked and packEncryptedField are now imported from @fhevm/shared

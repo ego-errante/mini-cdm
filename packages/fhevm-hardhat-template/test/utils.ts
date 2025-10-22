@@ -2,7 +2,6 @@ import { DatasetRegistry, DatasetRegistry__factory } from "../types";
 import { JobManager, JobManager__factory } from "../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { ethers, fhevm } from "hardhat";
-import { createPackedEncryptedTable, createPackedEncryptedRow } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
 import {
@@ -13,9 +12,10 @@ import {
   KAnonymityLevels,
   Op,
   generateMerkleTreeFromRows,
-  generateMerkleProof,
-  estimateJobGas,
-  estimateJobAllowance,
+  createPackedEncryptedRow,
+  encryptValues,
+  packEncryptedField,
+  joinPacked,
 } from "@fhevm/shared";
 
 // Local type alias for compatibility with RowDecoder functions
@@ -92,7 +92,12 @@ export async function generateTestDatasetWithCustomConfigPerRow(
 
   // Encrypt each row independently
   for (const rowConfig of rowConfigs) {
-    const encryptedRow = await createPackedEncryptedRow(contractAddress, signer, rowConfig as LocalRowConfig[]);
+    const encryptedRow = await createPackedEncryptedRow(
+      contractAddress,
+      signer.address,
+      fhevm,
+      rowConfig as LocalRowConfig[],
+    );
     rows.push(encryptedRow);
   }
 
@@ -368,4 +373,28 @@ export async function encryptKAnonymity(
   };
 }
 
-// Note: estimateJobGas and estimateJobAllowance are now imported from @fhevm/shared
+export async function createPackedEncryptedTable(
+  contractAddress: string,
+  signer: HardhatEthersSigner,
+  cells: {
+    type: "euint8" | "euint32" | "euint64";
+    value: number;
+  }[],
+  columns: number,
+): Promise<string[]> {
+  const { handles, inputProof, typeTags } = await encryptValues(contractAddress, signer.address, fhevm, cells);
+
+  let packedMatrix: string[][] = [];
+  for (let i = 0; i < cells.length; i++) {
+    const rowIndex = Math.floor(i / columns);
+    if (packedMatrix.length < rowIndex + 1) packedMatrix.push([]);
+    packedMatrix[rowIndex].push(packEncryptedField(Number(typeTags[i]), handles[i], inputProof));
+  }
+
+  const packedRows: string[] = [];
+  for (const row of packedMatrix) {
+    packedRows.push(joinPacked(row));
+  }
+
+  return packedRows;
+}

@@ -65,7 +65,7 @@ export async function createPackedEncryptedRow(
  * Encrypt values using FHEVM instance
  * Adapted from RowDecoder.ts:302-333
  */
-async function encryptValues(
+export async function encryptValues(
   contractAddress: string,
   userAddress: string,
   fhevmInstance: any,
@@ -109,8 +109,9 @@ async function encryptValues(
 /**
  * Pack encrypted field data with metadata
  * From RowDecoder.ts:339-352
+ * Exported for use in test utilities
  */
-function packEncryptedField(
+export function packEncryptedField(
   typeTag: number,
   handle: Uint8Array,
   proof: Uint8Array
@@ -131,7 +132,8 @@ function packEncryptedField(
 
 /**
  * Join packed field data into a single hex string
+ * Exported for use in test utilities
  */
-function joinPacked(packed: string[]): string {
+export function joinPacked(packed: string[]): string {
   return "0x" + packed.join("");
 }
