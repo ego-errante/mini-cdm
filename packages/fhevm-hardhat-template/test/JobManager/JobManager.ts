@@ -16,7 +16,6 @@ import {
   executeJobAndDecryptResult,
   parseJobFinalizedEvent,
   encryptKAnonymity,
-  estimateJobAllowance,
 } from "../utils";
 import {
   compileFilterDSL,
@@ -33,7 +32,14 @@ import {
   OpcodeName,
   buildBytecode,
 } from "../filter-dsl";
-import { KAnonymityLevels, OpCodes, RowConfig, TestDataset, DEFAULT_GAS_PRICE } from "@fhevm/shared";
+import {
+  KAnonymityLevels,
+  OpCodes,
+  RowConfig,
+  TestDataset,
+  DEFAULT_GAS_PRICE,
+  estimateJobAllowance,
+} from "@fhevm/shared";
 
 describe("JobManager", function () {
   let signers: Signers;

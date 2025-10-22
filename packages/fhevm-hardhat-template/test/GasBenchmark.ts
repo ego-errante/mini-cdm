@@ -8,12 +8,9 @@ import {
   Signers,
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
-  TestDataset,
-  OpCodes,
-  KAnonymityLevels,
-  RowConfig,
   createAndRegisterDatasetPerRow,
 } from "./utils";
+import { TestDataset, OpCodes, KAnonymityLevels, RowConfig } from "@fhevm/shared";
 import { compileFilterDSL, gt, ge, lt, le, eq, and, or, not, FilterDSL } from "./filter-dsl";
 
 // ========================================

@@ -3,7 +3,7 @@ import { JobManager } from "../../types";
 import { HardhatEthersSigner } from "@nomicfoundation/hardhat-ethers/signers";
 import { expect } from "chai";
 import { ethers, fhevm } from "hardhat";
-import { Signers, deployDatasetRegistryFixture, deployJobManagerFixture, estimateJobAllowance } from "../utils";
+import { Signers, deployDatasetRegistryFixture, deployJobManagerFixture } from "../utils";
 import {
   KAnonymityLevels,
   OpCodes,
@@ -12,10 +12,10 @@ import {
   generateMerkleTreeFromRows,
   type EncryptedDataset,
   type EncryptedRow,
-  type ColumnConfig,
   type JobParams,
   type FilterProg,
   DEFAULT_GAS_PRICE,
+  estimateJobAllowance,
 } from "@fhevm/shared";
 
 /**

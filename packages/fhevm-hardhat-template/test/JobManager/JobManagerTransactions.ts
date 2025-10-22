@@ -9,10 +9,8 @@ import {
   deployDatasetRegistryFixture,
   deployJobManagerFixture,
   setupTestDataset,
-  estimateJobAllowance,
-  estimateJobGas,
 } from "../utils";
-import { TestDataset, DEFAULT_GAS_PRICE } from "@fhevm/shared";
+import { estimateJobAllowance, estimateJobGas, TestDataset, DEFAULT_GAS_PRICE } from "@fhevm/shared";
 
 describe("Job Transactions", () => {
   let signers: Signers;

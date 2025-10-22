@@ -5,7 +5,18 @@ import { ethers, fhevm } from "hardhat";
 import { createPackedEncryptedTable, createPackedEncryptedRow } from "./RowDecoder";
 import { TransactionReceipt } from "ethers";
 
-import { TestDataset, RowConfig, DatasetObject, OpCodes, KAnonymityLevels, Op } from "@fhevm/shared";
+import {
+  TestDataset,
+  RowConfig,
+  DatasetObject,
+  OpCodes,
+  KAnonymityLevels,
+  Op,
+  generateMerkleTreeFromRows,
+  generateMerkleProof,
+  estimateJobGas,
+  estimateJobAllowance,
+} from "@fhevm/shared";
 
 // Local type alias for compatibility with RowDecoder functions
 type LocalRowConfig = {
@@ -13,103 +24,7 @@ type LocalRowConfig = {
   value: number;
 };
 
-// Test utilities
-export async function generateMerkleTreeFromRows(rows: string[], datasetId: number) {
-  if (rows.length === 0) {
-    throw new Error("Cannot generate merkle tree from empty rows");
-  }
-
-  // Generate leaf hashes for merkle tree
-  const leaves = rows.map((row, index) =>
-    ethers.keccak256(ethers.solidityPacked(["uint256", "uint256", "bytes"], [datasetId, index, row])),
-  );
-
-  // Build merkle tree from bottom up
-  let currentLevel = leaves;
-
-  // Keep building levels until we have a single root
-  while (currentLevel.length > 1) {
-    const nextLevel: string[] = [];
-
-    // Process pairs of nodes
-    for (let i = 0; i < currentLevel.length; i += 2) {
-      if (i + 1 < currentLevel.length) {
-        // Combine two nodes
-        const combined = ethers.keccak256(
-          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i + 1]]),
-        );
-        nextLevel.push(combined);
-      } else {
-        // Odd number of nodes, duplicate the last one by hashing with itself
-        const duplicated = ethers.keccak256(
-          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i]]),
-        );
-        nextLevel.push(duplicated);
-      }
-    }
-
-    currentLevel = nextLevel;
-  }
-
-  const root = currentLevel[0];
-
-  // Generate proofs for each leaf
-  const proofs = leaves.map((_, leafIndex) => generateMerkleProof(leaves, leafIndex));
-
-  return {
-    root,
-    proofs: proofs.map((proof) => proof.map((p) => p.toString())),
-  };
-}
-
-export function generateMerkleProof(leaves: string[], targetIndex: number): string[] {
-  const proof: string[] = [];
-  let currentLevel = leaves;
-  let index = targetIndex;
-
-  // Build proof from bottom up
-  while (currentLevel.length > 1) {
-    const nextLevel: string[] = [];
-    const proofElements: string[] = [];
-
-    for (let i = 0; i < currentLevel.length; i += 2) {
-      if (i + 1 < currentLevel.length) {
-        // Two nodes - combine them
-        const left = currentLevel[i];
-        const right = currentLevel[i + 1];
-        const combined = ethers.keccak256(ethers.solidityPacked(["bytes32", "bytes32"], [left, right]));
-        nextLevel.push(combined);
-
-        // Add sibling to proof (the one we're not using for this path)
-        if (i === index) {
-          proofElements.push(right);
-        } else if (i + 1 === index) {
-          proofElements.push(left);
-        }
-      } else {
-        // Odd number of nodes, duplicate the last one by hashing with itself
-        const duplicated = ethers.keccak256(
-          ethers.solidityPacked(["bytes32", "bytes32"], [currentLevel[i], currentLevel[i]]),
-        );
-        nextLevel.push(duplicated);
-
-        // If this is the target node, add its duplicate as proof element
-        if (i === index) {
-          proofElements.push(currentLevel[i]); // The duplicate sibling is the node itself
-        }
-      }
-    }
-
-    // Add the proof elements from this level
-    proof.push(...proofElements);
-
-    // Move to next level and update index
-    currentLevel = nextLevel;
-    index = Math.floor(index / 2);
-  }
-
-  return proof;
-}
+// Note: generateMerkleTreeFromRows and generateMerkleProof are now imported from @fhevm/shared
 
 export async function generateTestDatasetWithEncryption(
   contractAddress: string,
@@ -453,69 +368,4 @@ export async function encryptKAnonymity(
   };
 }
 
-/**
- * Estimates gas cost for a JobManager job based on parameters
- *
- * Model: Log-transformed linear regression
- * Accuracy: R² = 0.9091 (90.9%), MAPE = 34.27%
- *
- * @param rows Number of rows in dataset
- * @param columns Number of columns in dataset
- * @param operation Operation type
- * @param filterBytes Approximate filter bytecode length (0=none, 7=simple, 15=medium, 30=complex)
- * @returns Estimated total gas cost
- */
-export function estimateJobGas(
-  rows: number,
-  columns: number,
-  operation: "COUNT" | "SUM" | "AVG_P" | "WEIGHTED_SUM" | "MIN" | "MAX",
-  filterBytes: number,
-): bigint {
-  // Log-scale linear model
-  let logGas = 14.71635363;
-
-  // Add feature contributions
-  logGas += rows * 0.03171097;
-  logGas += columns * 0.08678983;
-  logGas += rows * columns * -0.00055629;
-  logGas += filterBytes * 0.01281007;
-
-  // Add operation-specific costs (relative to COUNT baseline)
-  const operationLogCosts = {
-    COUNT: 0, // baseline
-    SUM: 0.18367148,
-    AVG_P: 0.18604887,
-    WEIGHTED_SUM: 1.05067793,
-    MIN: 0.16035151,
-    MAX: 0.16046606,
-  };
-
-  logGas += operationLogCosts[operation];
-
-  // Transform back from log scale to gas units
-  const gas = Math.exp(logGas);
-
-  return BigInt(Math.round(gas));
-}
-
-/**
- * Estimates required ETH allowance for a job with 2x safety margin
- * @param rows Number of rows
- * @param columns Number of columns
- * @param operation Operation type
- * @param filterBytes Filter complexity (0-30)
- * @param gasPrice Gas price in wei
- * @returns Required allowance in wei with 2x safety margin
- */
-export function estimateJobAllowance(
-  rows: number,
-  columns: number,
-  operation: "COUNT" | "SUM" | "AVG_P" | "WEIGHTED_SUM" | "MIN" | "MAX",
-  filterBytes: number,
-  gasPrice: bigint,
-): bigint {
-  const estimatedGas = estimateJobGas(rows, columns, operation, filterBytes);
-  const cost = estimatedGas * gasPrice;
-  // 2x safety margin
-  return cost * 2n;
-}
+// Note: estimateJobGas and estimateJobAllowance are now imported from @fhevm/shared
