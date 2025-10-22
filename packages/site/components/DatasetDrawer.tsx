@@ -30,7 +30,7 @@ interface DatasetDrawerProps {
     rowCount: number;
     numColumns: number;
     merkleRoot: string;
-    kAnonymity: number;
+    kAnonymity: string;
     cooldownSec: number;
   };
   activity: {
@@ -145,7 +145,20 @@ export function DatasetDrawer({
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">K-Anonymity:</span>
-                  <span>{dataset.kAnonymity}</span>
+                  <div className="flex items-center gap-2">
+                    <span>{truncateAddress(dataset.kAnonymity, 6)}</span>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6"
+                      onClick={() => {
+                        navigator.clipboard.writeText(dataset.kAnonymity);
+                        toast.success("K-Anonymity copied to clipboard");
+                      }}
+                    >
+                      <Copy className="w-3 h-3" />
+                    </Button>
+                  </div>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Cooldown:</span>

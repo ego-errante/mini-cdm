@@ -32,7 +32,7 @@ export const GAS_LIMITS = {
 /**
  * Default gas price (20 gwei) used as fallback when network gas price is unavailable
  */
-export const DEFAULT_GAS_PRICE = ethers.parseUnits("20", "gwei");
+export const DEFAULT_GAS_PRICE = ethers.parseUnits("5", "gwei");
 
 /**
  * Encrypted type sizes in bits

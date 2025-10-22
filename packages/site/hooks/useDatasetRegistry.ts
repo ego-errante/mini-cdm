@@ -18,7 +18,7 @@ export type DatasetObject = {
   rowCount: number;
   owner: string;
   exists: boolean;
-  kAnonymity: number;
+  kAnonymity: string;
   cooldownSec: number;
 };
 
@@ -173,7 +173,7 @@ export const useDatasetRegistry = (parameters: {
           rowCount: Number(dataset.rowCount),
           owner: dataset.owner,
           exists: dataset.exists,
-          kAnonymity: Number(dataset.kAnonymity),
+          kAnonymity: dataset.kAnonymity,
           cooldownSec: Number(dataset.cooldownSec),
         })
       );
