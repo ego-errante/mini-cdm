@@ -1,1 +1,1 @@
-# Minimal but Extensible Confidential Data Marketplace (Mini-DCM)
+# Minimal but Extensible Confidential Data Marketplace (Mini-CDM)

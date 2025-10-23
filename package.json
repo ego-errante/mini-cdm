@@ -10,7 +10,7 @@
     "packages/*"
   ],
   "scripts": {
-    "postinstall": "./scripts/deploy-hardhat-node.sh",
+    "postinstall": "if [ -z \"$NETLIFY\" ]; then ./scripts/deploy-hardhat-node.sh; fi",
     "dev:mock": "npx -w ./packages/site npm run dev:mock",
     "generate-abi": "node ./scripts/generate-site-abi.mjs",
     "is-hardhat-node-running": "node ./scripts/is-hardhat-node-running.mjs",
