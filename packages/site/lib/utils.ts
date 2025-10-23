@@ -107,3 +107,35 @@ export function uuidToUint256(uuid: string) {
   // Convert to BigInt (uint256)
   return BigInt("0x" + hex);
 }
+
+/**
+ * Mapping of common chain IDs to human-readable network names
+ */
+export const NETWORK_NAMES: Record<number, string> = {
+  1: "Ethereum Mainnet",
+  5: "Goerli",
+  11155111: "Sepolia",
+  31337: "Hardhat Local Network",
+  1337: "Ganache Local Network",
+  137: "Polygon Mainnet",
+  80001: "Polygon Mumbai",
+  42161: "Arbitrum One",
+  421613: "Arbitrum Goerli",
+  10: "Optimism",
+  420: "Optimism Goerli",
+  8453: "Base",
+  84531: "Base Goerli",
+};
+
+/**
+ * Get human-readable network name for a given chain ID
+ *
+ * @param chainId - The chain ID to lookup
+ * @returns The network name or "Unknown Network" if not found
+ */
+export function getNetworkName(chainId: number | string | undefined): string {
+  if (!chainId) return "Not connected";
+
+  const id = typeof chainId === "string" ? parseInt(chainId, 10) : chainId;
+  return NETWORK_NAMES[id] || `Chain ${id}`;
+}

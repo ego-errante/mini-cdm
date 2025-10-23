@@ -19,7 +19,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { StatusBadgeProps } from "./StatusBadgeTypes";
-import { cn } from "@/lib/utils";
+import { cn, getNetworkName } from "@/lib/utils";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { Button } from "./ui/button";
 import { toast } from "sonner";
@@ -54,7 +54,7 @@ export function StatusBadgesPopover({
             className="gap-1.5 cursor-pointer hover:opacity-80 transition-opacity"
           >
             <Network className="h-3 w-3" />
-            <span>{chainId || "?"}</span>
+            <span>{getNetworkName(chainId)}</span>
             <Info className="h-2.5 w-2.5 ml-0.5 opacity-60" />
           </Badge>
         </PopoverTrigger>
@@ -70,6 +70,10 @@ export function StatusBadgesPopover({
             <Separator />
 
             <div className="grid gap-2 text-xs overflow-hidden">
+              <div className="flex justify-between items-center p-2 rounded-md bg-muted/50">
+                <span className="text-muted-foreground">Network</span>
+                <span className="font-semibold">{getNetworkName(chainId)}</span>
+              </div>
               <div className="flex justify-between items-center p-2 rounded-md bg-muted/50">
                 <span className="text-muted-foreground">Chain ID</span>
                 <span className="font-mono font-semibold">

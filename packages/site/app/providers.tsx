@@ -29,7 +29,9 @@ export function Providers({ children }: Props) {
       <Toaster />
       <MetaMaskProvider>
         <MetaMaskEthersSignerProvider
-          initialMockChains={{ 31337: "http://localhost:8545" }}
+          initialMockChains={{
+            31337: "http://localhost:8545",
+          }}
         >
           <InMemoryStorageProvider>
             <CDMProvider>{children}</CDMProvider>
