@@ -424,8 +424,34 @@ misc/
 ├── gas_benchmark_results.csv    # Raw benchmark data
 ├── gas_output.txt               # Full test logs
 ├── estimateJobGas_log.ts        # Generated estimator function
-└── gas_analysis.png             # Visualizations
+├── gas_analysis.png             # Visualizations
+└── notebooks/
+    └── gas_benchmark.ipynb      # Interactive analysis notebook with model development
 ```
+
+## Analysis Tools
+
+### gas_benchmark.ipynb
+
+The Jupyter notebook (`misc/notebooks/gas_benchmark.ipynb`) provides an interactive Python environment for advanced gas analysis and model development:
+
+**Key Features**:
+
+- **Interactive Model Development**: Build and compare different regression approaches (linear vs log-transformed)
+- **MAPE Diagnostics**: Specialized tools to identify and fix prediction accuracy issues for small datasets
+- **Error Analysis**: Detailed breakdown of prediction errors by operation, row count, and dataset size
+- **Real-time Visualization**: Generate plots showing actual vs predicted gas costs, coefficient importance, and scaling patterns
+- **TypeScript Generation**: Automatically creates optimized `estimateJobGas()` functions with learned coefficients
+- **Model Validation**: Tests multiple modeling approaches and identifies the best performing one
+
+**When to Use**:
+
+- After collecting benchmark data to develop the statistical model
+- When troubleshooting poor model accuracy (high MAPE)
+- For experimenting with new modeling approaches
+- To generate updated estimator functions for production
+
+**Key Innovation**: Discovered that log-transformed regression resolves MAPE issues for small cases, achieving 90.9% R² and 34.27% MAPE vs 70%+ MAPE with standard linear regression on datasets spanning 100× gas cost ranges.
 
 ---
 
@@ -441,11 +467,21 @@ Copy CSV output → save to `../misc/gas_benchmark_results.csv`
 
 ### Phase 2: Analyze (5 minutes)
 
+**Option A: Use the automated script**
+
 ```bash
 python test/analyze_gas_results.py ../misc/gas_benchmark_results.csv
 ```
 
-Review R² and MAPE metrics
+**Option B: Use the interactive notebook** (recommended for model development)
+
+```bash
+cd misc/notebooks
+jupyter notebook gas_benchmark.ipynb
+# Or use VS Code/Jupyter extension
+```
+
+Review R² and MAPE metrics (target: R² ≥ 0.60, MAPE ≤ 40%)
 
 ### Phase 3: Validate (30 minutes)
 
