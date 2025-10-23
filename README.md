@@ -298,7 +298,6 @@ The project includes comprehensive test coverage:
 - **Unit Tests**: Individual contract function testing
 - **Integration Tests**: Multi-contract workflows
 - **Gas Benchmarks**: Performance analysis (63 test matrix)
-- **Frontend Tests**: Component and hook testing
 
 Run tests:
 
@@ -312,10 +311,6 @@ npx hardhat test test/JobManager/JobManager.ts
 
 # Gas benchmarking
 npx hardhat test test/GasBenchmark.ts
-
-# Frontend tests
-cd packages/site
-npm test
 ```
 
 ## Gas Optimization
@@ -478,7 +473,7 @@ See the full **[Gas Benchmarking Guide](docs/GAS_BENCHMARKING.md)** for a detail
    - Only divisor remains plaintext for AVG_P
    - Enhanced query privacy
 
-**See [Architecture Guide](docs/ARCHITECTURE.md) for detailed technical design and contract implementation details.**
+**See [Architecture Guide](docs/ARCHITECTURE.md) for detailed technical design and contract implementation overview.**
 
 ## Contributing
 
@@ -536,4 +531,4 @@ Built with:
 
 **Built with privacy at its core. Powered by Fully Homomorphic Encryption.**
 
-For questions or support, visit our [GitHub Issues](https://github.com/ego-errante/mini-dcm/issues) or join the [Zama Discord](https://discord.com/invite/zama).
+For questions or support, visit the project's [GitHub Issues](https://github.com/ego-errante/mini-dcm/issues) or join the [Zama Discord](https://discord.com/invite/zama).
