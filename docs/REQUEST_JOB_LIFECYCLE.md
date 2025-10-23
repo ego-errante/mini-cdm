@@ -1,6 +1,6 @@
 # Request & Job Lifecycle
 
-Complete guide to the request-based and direct job interaction models in Mini-DCM, including state transitions, payment flows, and code examples.
+Complete guide to the request-based and direct job interaction models in Mini-CDM, including state transitions, payment flows, and code examples.
 
 ## Table of Contents
 
@@ -15,7 +15,7 @@ Complete guide to the request-based and direct job interaction models in Mini-DC
 
 ## Overview
 
-Mini-DCM supports two interaction patterns:
+Mini-CDM supports two interaction patterns:
 
 1. **Direct Job Model**: Dataset owner creates jobs directly for buyers (trusted/partnered scenarios)
 2. **Request-Based Model**: Buyers submit requests, sellers accept and fulfill (marketplace scenarios)

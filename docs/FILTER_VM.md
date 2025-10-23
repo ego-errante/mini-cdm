@@ -1,6 +1,6 @@
 # Filter VM Specification
 
-Complete specification for Mini-DCM's stack-based bytecode virtual machine that evaluates encrypted data filters using Fully Homomorphic Encryption.
+Complete specification for Mini-CDM's stack-based bytecode virtual machine that evaluates encrypted data filters using Fully Homomorphic Encryption.
 
 ## Table of Contents
 

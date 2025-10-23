@@ -1,10 +1,10 @@
-# Mini-DCM: Minimal Confidential Data Marketplace
+# Mini-CDM: Minimal Confidential Data Marketplace
 
-A privacy-preserving data marketplace built on [Zama's FHEVM](https://docs.zama.ai/fhevm) (Fully Homomorphic Encryption for Ethereum Virtual Machine). Mini-DCM enables secure computation over encrypted datasets without revealing the underlying data to buyers or the blockchain.
+A privacy-preserving data marketplace built on [Zama's FHEVM](https://docs.zama.ai/fhevm) (Fully Homomorphic Encryption for Ethereum Virtual Machine). Mini-CDM enables secure computation over encrypted datasets without revealing the underlying data to buyers or the blockchain.
 
-## What is Mini-DCM?
+## What is Mini-CDM?
 
-Mini-DCM is a decentralized marketplace where:
+Mini-CDM is a decentralized marketplace where:
 
 - **Data sellers** can publish encrypted datasets with privacy guarantees
 - **Data buyers** can run analytical queries over encrypted data
@@ -54,7 +54,7 @@ Clone the repository and install dependencies. The `postinstall` script will aut
 
 ```bash
 git clone <repository-url>
-cd mini-dcm
+cd mini-cdm
 npm install
 ```
 
@@ -189,7 +189,7 @@ Stack-based bytecode interpreter for encrypted data filtering:
 ## Project Structure
 
 ```
-mini-dcm/
+mini-cdm/
 ├── docs/                              # Documentation
 │   ├── ARCHITECTURE.md                # System design and architecture
 │   ├── REQUEST_JOB_LIFECYCLE.md       # Workflow documentation
@@ -315,7 +315,7 @@ npx hardhat test test/GasBenchmark.ts
 
 ## Gas Optimization
 
-Mini-DCM includes a sophisticated gas benchmarking system:
+Mini-CDM includes a sophisticated gas benchmarking system:
 
 - **63-Test Matrix**: Fractional factorial design
 - **90.9% R² Accuracy**: Log-space regression model
@@ -531,4 +531,4 @@ Built with:
 
 **Built with privacy at its core. Powered by Fully Homomorphic Encryption.**
 
-For questions or support, visit the project's [GitHub Issues](https://github.com/ego-errante/mini-dcm/issues) or join the [Zama Discord](https://discord.com/invite/zama).
+For questions or support, visit the project's [GitHub Issues](https://github.com/ego-errante/mini-cdm/issues) or join the [Zama Discord](https://discord.com/invite/zama).

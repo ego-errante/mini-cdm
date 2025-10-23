@@ -1,6 +1,6 @@
 # Frontend Development Guide
 
-Comprehensive guide for developing with the Mini-DCM React frontend, including architecture, FHEVM integration, component patterns, and deployment.
+Comprehensive guide for developing with the Mini-CDM React frontend, including architecture, FHEVM integration, component patterns, and deployment.
 
 ## Table of Contents
 

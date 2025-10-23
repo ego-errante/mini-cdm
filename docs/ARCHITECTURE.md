@@ -1,6 +1,6 @@
-# Mini-DCM Architecture
+# Mini-CDM Architecture
 
-This document provides a comprehensive overview of Mini-DCM's system architecture, including smart contract design, data flow, payment mechanisms, security model, and frontend architecture.
+This document provides a comprehensive overview of Mini-CDM's system architecture, including smart contract design, data flow, payment mechanisms, security model, and frontend architecture.
 
 ## Table of Contents
 
@@ -14,7 +14,7 @@ This document provides a comprehensive overview of Mini-DCM's system architectur
 
 ## System Overview
 
-Mini-DCM is a decentralized marketplace for confidential data analytics built on three core principles:
+Mini-CDM is a decentralized marketplace for confidential data analytics built on three core principles:
 
 1. **Privacy-First**: All computations use Fully Homomorphic Encryption (FHE)
 2. **Trustless**: Cryptographic proofs ensure data integrity
@@ -286,7 +286,7 @@ Mini-DCM is a decentralized marketplace for confidential data analytics built on
 
 ## Payment System
 
-Mini-DCM supports two payment models:
+Mini-CDM supports two payment models:
 
 1. **Direct Jobs**: Off-chain payment arrangements
 2. **Request-Based**: On-chain escrow with automatic gas tracking and settlement
@@ -419,7 +419,7 @@ contract JobManager is ReentrancyGuard {
 ### Monorepo Structure (npm workspaces)
 
 ```
-mini-dcm/
+mini-cdm/
 ├─ packages/
 │  ├─ fhevm-hardhat-template/  → Smart contracts, tests, deployment
 │  ├─ site/                     → Next.js frontend application
