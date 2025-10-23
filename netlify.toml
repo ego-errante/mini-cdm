@@ -1,0 +1,17 @@
+[build]
+  # Build the shared package first, then the site
+  command = "npm run build:shared && cd packages/site && npm run build"
+  publish = "packages/site/.next"
+  # Specify the base directory for the monorepo
+  base = "/"
+
+[build.environment]
+  # Ensure we're using a compatible Node version
+  NODE_VERSION = "20"
+  # Skip the hardhat deploy during install on Netlify
+  NETLIFY = "true"
+
+# Next.js plugin for proper deployment
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
