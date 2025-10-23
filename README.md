@@ -116,7 +116,11 @@ npx hardhat vars set ETHERSCAN_API_KEY
     ```bash
     npm run deploy:sepolia
     ```
-3.  **Run Frontend**: The frontend will automatically detect the Sepolia deployment.
+3.  **Deployed Addresses**:
+    - **DatasetRegistry**: `0xcC804D65432b90A6e2759323967ca6babe948917`
+    - **JobManager**: `0x3d921D887DDC947465975b345Cc91822E198F3B3`
+
+4.  **Run Frontend**: The frontend will automatically detect the Sepolia deployment.
     ```bash
     npm run dev:mock
     ```
