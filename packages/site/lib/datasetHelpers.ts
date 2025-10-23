@@ -52,6 +52,67 @@ export function userHasRequestForDataset(
 }
 
 /**
+ * Get count of user's requests for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup + O(n) filter on dataset-specific requests only
+ */
+export function getUserRequestCount(
+  datasetId: bigint,
+  activity: JobManagerActivity,
+  userAddress: string | undefined
+): number {
+  if (!userAddress) return 0;
+
+  const datasetIdStr = datasetId.toString();
+  const requests = activity.byDataset?.[datasetIdStr]?.requests ?? [];
+
+  return requests.filter(
+    (request) => request.buyer.toLowerCase() === userAddress.toLowerCase()
+  ).length;
+}
+
+/**
+ * Get count of user's pending requests for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup + O(n) filter on dataset-specific requests only
+ */
+export function getUserPendingRequestCount(
+  datasetId: bigint,
+  activity: JobManagerActivity,
+  userAddress: string | undefined
+): number {
+  if (!userAddress) return 0;
+
+  const datasetIdStr = datasetId.toString();
+  const requests = activity.byDataset?.[datasetIdStr]?.requests ?? [];
+
+  return requests.filter(
+    (request) =>
+      request.buyer.toLowerCase() === userAddress.toLowerCase() &&
+      request.status === RequestStatus.PENDING
+  ).length;
+}
+
+/**
+ * Get count of user's accepted requests for a specific dataset
+ * Uses precomputed byDataset map for O(1) lookup + O(n) filter on dataset-specific requests only
+ */
+export function getUserAcceptedRequestCount(
+  datasetId: bigint,
+  activity: JobManagerActivity,
+  userAddress: string | undefined
+): number {
+  if (!userAddress) return 0;
+
+  const datasetIdStr = datasetId.toString();
+  const requests = activity.byDataset?.[datasetIdStr]?.requests ?? [];
+
+  return requests.filter(
+    (request) =>
+      request.buyer.toLowerCase() === userAddress.toLowerCase() &&
+      request.status === RequestStatus.ACCEPTED
+  ).length;
+}
+
+/**
  * Check if user is the dataset owner
  */
 export function isDatasetOwner(

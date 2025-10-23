@@ -14,7 +14,9 @@ interface DatasetCardProps {
   numColumns: number;
   jobCount: number;
   requestCount: number;
-  hasUserRequest: boolean;
+  userRequestCount: number;
+  userPendingRequestCount: number;
+  userAcceptedRequestCount: number;
   onClick: () => void;
 }
 
@@ -25,7 +27,9 @@ export function DatasetCard({
   numColumns,
   jobCount,
   requestCount,
-  hasUserRequest,
+  userRequestCount,
+  userPendingRequestCount,
+  userAcceptedRequestCount,
   onClick,
 }: DatasetCardProps) {
   return (
@@ -51,11 +55,6 @@ export function DatasetCard({
               <Copy className="w-4 h-4" />
             </Button>
           </div>
-          {hasUserRequest && (
-            <Badge variant="secondary" className="ml-2">
-              Your Request
-            </Badge>
-          )}
         </CardTitle>
       </CardHeader>
       <CardContent>
@@ -80,19 +79,48 @@ export function DatasetCard({
               </Button>
             </div>
           </div>
-          <div className="flex gap-2 flex-wrap">
-            <Badge variant="outline" className="text-xs">
-              {rowCount} Rows
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              {numColumns} Columns
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              {jobCount} Jobs
-            </Badge>
-            <Badge variant="outline" className="text-xs">
-              {requestCount} Requests
-            </Badge>
+          {userRequestCount > 0 && (
+            <div className="flex flex-col items-start gap-2 bg-muted/50 p-2 rounded-md">
+              <span className="text-muted-foreground text-sm">
+                Your Requests:
+              </span>
+              <div className="flex items-center gap-2">
+                <Badge variant="secondary">{userRequestCount} total</Badge>
+                {userPendingRequestCount > 0 && (
+                  <Badge
+                    variant="outline"
+                    className="border-yellow-500 text-yellow-600"
+                  >
+                    {userPendingRequestCount} Pending
+                  </Badge>
+                )}
+                {userAcceptedRequestCount > 0 && (
+                  <Badge variant="default" className="bg-green-600">
+                    {userAcceptedRequestCount} Accepted
+                  </Badge>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex flex-col items-start gap-2">
+            <span className="text-muted-foreground text-sm">
+              Dataset Summary:
+            </span>
+            <div className="flex gap-2 flex-wrap">
+              <Badge variant="outline" className="text-xs">
+                {rowCount} Rows
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {numColumns} Columns
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {jobCount} Jobs
+              </Badge>
+              <Badge variant="outline" className="text-xs">
+                {requestCount} Requests
+              </Badge>
+            </div>
           </div>
         </div>
       </CardContent>

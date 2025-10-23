@@ -11,6 +11,9 @@ import {
   getDatasetJobCount,
   getDatasetRequestCount,
   userHasRequestForDataset,
+  getUserRequestCount,
+  getUserPendingRequestCount,
+  getUserAcceptedRequestCount,
   isDatasetOwner as checkIsDatasetOwner,
   getDatasetActivity,
 } from "@/lib/datasetHelpers";
@@ -54,20 +57,38 @@ export default function ConfidentialDataMarketplace() {
       {
         jobCount: number;
         requestCount: number;
-        hasUserRequest: boolean;
+        userRequestCount: number;
+        userPendingRequestCount: number;
+        userAcceptedRequestCount: number;
       }
     >();
 
     datasets.forEach((dataset) => {
       const jobCount = getDatasetJobCount(dataset.id, activity);
       const requestCount = getDatasetRequestCount(dataset.id, activity);
-      const hasUserRequest = userHasRequestForDataset(
+      const userRequestCount = getUserRequestCount(
+        dataset.id,
+        activity,
+        currentUserAddress
+      );
+      const userPendingRequestCount = getUserPendingRequestCount(
+        dataset.id,
+        activity,
+        currentUserAddress
+      );
+      const userAcceptedRequestCount = getUserAcceptedRequestCount(
         dataset.id,
         activity,
         currentUserAddress
       );
 
-      statsMap.set(dataset.id, { jobCount, requestCount, hasUserRequest });
+      statsMap.set(dataset.id, {
+        jobCount,
+        requestCount,
+        userRequestCount,
+        userPendingRequestCount,
+        userAcceptedRequestCount,
+      });
     });
 
     return statsMap;
@@ -139,7 +160,9 @@ export default function ConfidentialDataMarketplace() {
             const stats = datasetStats.get(dataset.id) || {
               jobCount: 0,
               requestCount: 0,
-              hasUserRequest: false,
+              userRequestCount: 0,
+              userPendingRequestCount: 0,
+              userAcceptedRequestCount: 0,
             };
 
             return (
@@ -151,7 +174,9 @@ export default function ConfidentialDataMarketplace() {
                 numColumns={dataset.numColumns}
                 jobCount={stats.jobCount}
                 requestCount={stats.requestCount}
-                hasUserRequest={stats.hasUserRequest}
+                userRequestCount={stats.userRequestCount}
+                userPendingRequestCount={stats.userPendingRequestCount}
+                userAcceptedRequestCount={stats.userAcceptedRequestCount}
                 onClick={() => setSelectedDatasetId(dataset.id)}
               />
             );
