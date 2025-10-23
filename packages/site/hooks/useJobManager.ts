@@ -46,8 +46,7 @@ export const useJobManager = (parameters: {
     const contractInfo = getContractByChainId(
       chainId,
       JobManagerABI,
-      JobManagerAddresses,
-      "JobManager"
+      JobManagerAddresses
     );
 
     if (!contractInfo.address) {

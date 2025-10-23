@@ -19,7 +19,6 @@ import { JobProcessorModal } from "./JobProcessorModal";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { JobData, JobRequest } from "@fhevm/shared";
-import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface DatasetDrawerProps {
   open: boolean;
@@ -222,7 +221,6 @@ export function DatasetDrawer({
           requestId={acceptedRequestId}
           datasetId={dataset.id}
           requests={activity.requests}
-          jobs={activity.jobs}
         />
       )}
 

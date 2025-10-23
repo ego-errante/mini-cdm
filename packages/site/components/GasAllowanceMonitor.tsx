@@ -3,8 +3,6 @@
 import { useState } from "react";
 import { ethers } from "ethers";
 import {
-  JobData,
-  JobRequest,
   RequestStatus,
   OpName,
   OpNames,

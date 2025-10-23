@@ -1,6 +1,7 @@
 "use client";
 
 import { toast } from "sonner";
+import { JobParams } from "@fhevm/shared";
 import {
   Dialog,
   DialogContent,
@@ -29,7 +30,12 @@ export function NewRequestModal({
   const { jobManager } = useCDMContext();
   const submitMutation = jobManager.submitRequestMutation;
 
-  function handleSubmitRequest(params: any): Promise<void> {
+  function handleSubmitRequest(params: {
+    datasetId: bigint;
+    baseFee: bigint;
+    computeAllowance: bigint;
+    jobParams: JobParams;
+  }): Promise<void> {
     return new Promise((resolve, reject) => {
       submitMutation.mutate(params, {
         onSuccess: () => {

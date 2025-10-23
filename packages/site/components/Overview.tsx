@@ -10,7 +10,6 @@ import { useCDMContext } from "@/hooks/useCDMContext";
 import {
   getDatasetJobCount,
   getDatasetRequestCount,
-  userHasRequestForDataset,
   getUserRequestCount,
   getUserPendingRequestCount,
   getUserAcceptedRequestCount,
@@ -18,7 +17,7 @@ import {
   getDatasetActivity,
 } from "@/lib/datasetHelpers";
 
-export default function ConfidentialDataMarketplace() {
+export default function Overview() {
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedDatasetId, setSelectedDatasetId] = useState<bigint | null>(
     null
@@ -40,7 +39,10 @@ export default function ConfidentialDataMarketplace() {
   const { getDatasetsQuery } = datasetRegistry;
   const { getJobManagerActivity } = jobManager;
 
-  const datasets = getDatasetsQuery.data || [];
+  const datasets = useMemo(
+    () => getDatasetsQuery.data || [],
+    [getDatasetsQuery.data]
+  );
   const activity = getJobManagerActivity.data;
   const currentUserAddress = accounts?.[0];
 

@@ -1,7 +1,7 @@
-import { ethers } from "ethers";
+import { EncryptedDataset } from "@fhevm/shared";
 
 export interface ParsedDataset {
-  rows: any[][];
+  rows: string[][];
   numColumns: number;
   rowCount: number;
 }
@@ -9,7 +9,7 @@ export interface ParsedDataset {
 /**
  * Parse CSV content into a 2D array
  */
-export function parseCSV(csvContent: string): any[][] {
+export function parseCSV(csvContent: string): string[][] {
   const lines = csvContent.trim().split("\n");
   return lines.map((line) => {
     // Simple CSV parser - handles basic cases
@@ -23,7 +23,7 @@ export function parseCSV(csvContent: string): any[][] {
  * - Array of arrays: [[1,2,3], [4,5,6]]
  * - Array of objects: [{a:1, b:2}, {a:3, b:4}]
  */
-export function parseJSON(jsonContent: string): any[][] {
+export function parseJSON(jsonContent: string): string[][] {
   const data = JSON.parse(jsonContent);
 
   if (!Array.isArray(data) || data.length === 0) {
@@ -51,7 +51,7 @@ export async function processDatasetFile(file: File): Promise<ParsedDataset> {
   const content = await file.text();
   const fileType = file.name.toLowerCase().endsWith(".json") ? "json" : "csv";
 
-  let rows: any[][];
+  let rows: string[][];
 
   if (fileType === "json") {
     rows = parseJSON(content);
@@ -88,12 +88,14 @@ export async function processDatasetFile(file: File): Promise<ParsedDataset> {
  */
 const STORAGE_KEY_PREFIX = "encrypted-dataset-";
 
-export function saveEncryptedDatasetToStorage(dataset: any): void {
+export function saveEncryptedDatasetToStorage(dataset: EncryptedDataset): void {
   const key = `${STORAGE_KEY_PREFIX}${dataset.datasetId}`;
   localStorage.setItem(key, JSON.stringify(dataset));
 }
 
-export function loadEncryptedDatasetFromStorage(datasetId: string): any | null {
+export function loadEncryptedDatasetFromStorage(
+  datasetId: string
+): EncryptedDataset | null {
   const key = `${STORAGE_KEY_PREFIX}${datasetId}`;
   const data = localStorage.getItem(key);
   return data ? JSON.parse(data) : null;

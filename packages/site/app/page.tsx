@@ -1,9 +1,9 @@
-import ConfidentialDataMarketplace from "@/components/confidential-data-marketplace";
+import Overview from "@/components/Overview";
 
 export default function Home() {
   return (
     <main className="px-6">
-      <ConfidentialDataMarketplace />
+      <Overview />
     </main>
   );
 }

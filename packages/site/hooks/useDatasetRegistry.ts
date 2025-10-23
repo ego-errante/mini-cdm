@@ -50,8 +50,7 @@ export const useDatasetRegistry = (parameters: {
     const contractInfo = getContractByChainId(
       chainId,
       DatasetRegistryABI,
-      DatasetRegistryAddresses,
-      "DatasetRegistry"
+      DatasetRegistryAddresses
     );
 
     if (!contractInfo.address) {

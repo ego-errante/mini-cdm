@@ -24,7 +24,7 @@ export type ContractAddressesMapping = Record<string, ContractDeployment>;
  * Contract ABI wrapper type
  */
 export type ContractABI = {
-  abi: readonly any[] | any[];
+  abi: ethers.InterfaceAbi;
 };
 
 /**
@@ -34,7 +34,7 @@ export type ContractInfo = {
   address?: `0x${string}`;
   chainId?: number;
   chainName?: string;
-  abi: readonly any[] | any[];
+  abi: ethers.InterfaceAbi;
 };
 
 /**
@@ -43,7 +43,6 @@ export type ContractInfo = {
  * @param chainId - The chain ID to lookup
  * @param contractABI - The contract ABI object (e.g., JobManagerABI, DatasetRegistryABI)
  * @param contractAddresses - The contract addresses mapping (e.g., JobManagerAddresses, DatasetRegistryAddresses)
- * @param contractName - Optional name for error messages
  * @returns Contract information including address, chainId, chainName, and ABI
  *
  * @example
@@ -51,16 +50,14 @@ export type ContractInfo = {
  * const jobManagerInfo = getContractByChainId(
  *   chainId,
  *   JobManagerABI,
- *   JobManagerAddresses,
- *   "JobManager"
+ *   JobManagerAddresses
  * );
  * ```
  */
 export function getContractByChainId(
   chainId: number | undefined,
   contractABI: ContractABI,
-  contractAddresses: ContractAddressesMapping,
-  contractName?: string
+  contractAddresses: ContractAddressesMapping
 ): ContractInfo {
   // If no chainId provided, return just the ABI
   if (!chainId) {

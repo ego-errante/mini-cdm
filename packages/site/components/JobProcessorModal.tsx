@@ -14,13 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { loadEncryptedDatasetFromStorage } from "@/lib/datasetUtils";
-import {
-  EncryptedDataset,
-  generateMerkleProof,
-  JobData,
-  JobRequest,
-  RequestStatus,
-} from "@fhevm/shared";
+import { EncryptedDataset, JobRequest, RequestStatus } from "@fhevm/shared";
 import { ethers } from "ethers";
 import { useCDMContext } from "@/hooks/useCDMContext";
 import { Loader2, DollarSign, AlertTriangle } from "lucide-react";
@@ -32,7 +26,6 @@ interface JobProcessorModalProps {
   requestId: bigint;
   datasetId: bigint;
   requests: JobRequest[];
-  jobs: JobData[];
 }
 
 export function JobProcessorModal({
@@ -41,7 +34,6 @@ export function JobProcessorModal({
   requestId,
   datasetId,
   requests,
-  jobs,
 }: JobProcessorModalProps) {
   const { jobManager } = useCDMContext();
   const pushRowMutation = jobManager.pushRowMutation;
@@ -209,9 +201,10 @@ export function JobProcessorModal({
             <Alert>
               <AlertTitle>Job Processing</AlertTitle>
               <AlertDescription>
-                Process each row of the dataset by clicking "Next Row". Once all
-                rows are processed, click "Finalize" to complete the job and
-                allow the buyer to retrieve the result.
+                Process each row of the dataset by clicking &quot;Next
+                Row&quot;. Once all rows are processed, click
+                &quot;Finalize&quot; to complete the job and allow the buyer to
+                retrieve the result.
               </AlertDescription>
             </Alert>
           )}
@@ -327,8 +320,8 @@ export function JobProcessorModal({
               <Alert>
                 <AlertTitle>Ready to Finalize</AlertTitle>
                 <AlertDescription>
-                  All rows have been processed. Click "Finalize Job" to complete
-                  the job execution.
+                  All rows have been processed. Click &quot;Finalize Job&quot;
+                  to complete the job execution.
                 </AlertDescription>
               </Alert>
             )}

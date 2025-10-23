@@ -4,7 +4,6 @@ import { useState } from "react";
 import { ethers } from "ethers";
 import { useMutation } from "@tanstack/react-query";
 import { useForm } from "react-hook-form";
-import type { FhevmInstance } from "@fhevm/react";
 import { toast } from "sonner";
 import {
   Dialog,
@@ -31,7 +30,6 @@ import {
 import {
   processDatasetFile,
   saveEncryptedDatasetToStorage,
-  type ParsedDataset,
 } from "@/lib/datasetUtils";
 import {
   createPackedEncryptedRow,
@@ -72,7 +70,7 @@ export function CreateDatasetModal({
   const queryClient = useQueryClient();
   const { datasetRegistry, jobManager, fhevmInstance, ethersSigner } =
     useCDMContext();
-  const { commitDatasetMutation, getDatasetsQuery } = datasetRegistry;
+  const { commitDatasetMutation } = datasetRegistry;
 
   // Encryption state
   const [encryptionProgress, setEncryptionProgress] = useState({

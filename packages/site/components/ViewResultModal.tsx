@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ethers } from "ethers";
 import { JobData, JobRequest, Op, RequestStatus } from "@fhevm/shared";
 import { FhevmDecryptionSignature } from "@fhevm/react";
 import { useCDMContext } from "@/hooks/useCDMContext";
@@ -33,11 +32,6 @@ interface ViewResultModalProps {
   onOpenChange: (open: boolean) => void;
   request: JobRequest | undefined;
   job: JobData | undefined;
-}
-
-interface DecryptedResult {
-  result: bigint;
-  isOverflow: boolean;
 }
 
 export function ViewResultModal({
@@ -157,7 +151,7 @@ export function ViewResultModal({
     if (!open) {
       decryptMutation.reset();
     }
-  }, [open, job?.id, job?.result]);
+  }, [open, job?.id, job?.result, decryptMutation]);
 
   function formatJobParams(params: JobRequest["params"]) {
     const opLabels: Record<Op, string> = {

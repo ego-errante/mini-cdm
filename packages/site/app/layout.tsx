@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
-import Image from "next/image";
 import { LuDatabaseZap } from "react-icons/lu";
 
 export const metadata: Metadata = {

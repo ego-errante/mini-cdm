@@ -72,7 +72,7 @@ export function NewRequestForm({
   onSubmit,
   onCancel,
 }: NewRequestFormProps) {
-  const { ethersReadonlyProvider, gasPrice } = useCDMContext();
+  const { gasPrice } = useCDMContext();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [gasEstimate, setGasEstimate] = useState<{
     gas: bigint;

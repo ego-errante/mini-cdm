@@ -171,7 +171,13 @@ export function ActivityTable({
   }
 
   function getStatusBadge(status: RequestStatus) {
-    const variants: Record<RequestStatus, { variant: any; label: string }> = {
+    const variants: Record<
+      RequestStatus,
+      {
+        variant: "default" | "secondary" | "destructive" | "outline";
+        label: string;
+      }
+    > = {
       [RequestStatus.PENDING]: { variant: "secondary", label: "Pending" },
       [RequestStatus.ACCEPTED]: { variant: "default", label: "Accepted" },
       [RequestStatus.COMPLETED]: { variant: "default", label: "Completed" },
