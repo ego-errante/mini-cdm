@@ -140,52 +140,14 @@ function submitRequest(
 - `baseFee`: Fixed payment for dataset access (held until completion)
 - `computeAllowance`: `msg.value - baseFee` (gas budget for processing)
 
-**Example**:
+**State After Submission**:
 
-```typescript
-const datasetId = 1n;
-const jobParams = {
-  op: 3, // COUNT
-  targetField: 0,
-  weights: [],
-  divisor: 0,
-  clampMin: 0n,
-  clampMax: 0n,
-  roundBucket: 0,
-  filter: compileFilterDSL(gt(0, 18)), // age > 18
-};
-
-const baseFee = ethers.parseEther("0.1"); // 0.1 ETH fixed fee
-const computeAllowance = ethers.parseEther("0.5"); // 0.5 ETH gas budget
-const totalPayment = baseFee + computeAllowance;
-
-const tx = await jobManager.submitRequest(datasetId, jobParams, baseFee, {
-  value: totalPayment,
-});
-
-const receipt = await tx.wait();
-const event = receipt.logs.find(
-  (log) => log.fragment?.name === "RequestSubmitted"
-);
-const requestId = event.args.requestId;
-
-console.log(`Request ${requestId} submitted with ${totalPayment} ETH`);
 ```
-
-**State After**:
-
-```javascript
-{
-  datasetId: 1,
-  buyer: "0xBuyer...",
-  params: {...},
-  status: RequestStatus.PENDING,
-  timestamp: 1234567890,
-  jobId: 0,  // Not yet created
-  baseFee: 100000000000000000,      // 0.1 ETH
-  computeAllowance: 500000000000000000,  // 0.5 ETH
-  gasDebtToSeller: 0
-}
+Status: PENDING
+jobId: 0 (not yet created)
+baseFee: Held in escrow
+computeAllowance: Available for gas deductions
+gasDebtToSeller: 0
 ```
 
 ### 2a. Accept Request (ACCEPTED)
@@ -208,44 +170,14 @@ function acceptRequest(uint256 requestId)
 4. Resets timestamp (for stall detection)
 5. Tracks gas usage for acceptRequest call
 
-**Example**:
+**State After Acceptance**:
 
-```typescript
-// Seller monitors for new requests
-jobManager.on("RequestSubmitted", async (requestId, datasetId, buyer) => {
-  console.log(`New request ${requestId} for dataset ${datasetId}`);
-
-  // Check if we own this dataset
-  const isOwner = await datasetRegistry.isDatasetOwner(
-    datasetId,
-    await signer.getAddress()
-  );
-
-  if (isOwner) {
-    // Accept request
-    const tx = await jobManager.acceptRequest(requestId);
-    const receipt = await tx.wait();
-
-    const event = receipt.logs.find(
-      (log) => log.fragment?.name === "RequestAccepted"
-    );
-    const jobId = event.args.jobId;
-
-    console.log(`Accepted request ${requestId}, created job ${jobId}`);
-  }
-});
 ```
-
-**State After**:
-
-```javascript
-{
-  status: RequestStatus.ACCEPTED,
-  jobId: 42,  // Job created
-  timestamp: 1234567990,  // Reset for stall detection
-  gasDebtToSeller: 350000,  // Gas for acceptRequest
-  computeAllowance: 499650000  // Deducted gas cost
-}
+Status: ACCEPTED
+jobId: Created and linked
+timestamp: Reset for stall detection
+gasDebtToSeller: Gas for acceptRequest
+computeAllowance: Deducted by acceptRequest gas cost
 ```
 
 ### 2b. Reject Request (REJECTED)
@@ -260,16 +192,6 @@ jobManager.on("RequestSubmitted", async (requestId, datasetId, buyer) => {
 - Status set to REJECTED
 - No job created
 
-**Example**:
-
-```typescript
-// Seller rejects request
-const tx = await jobManager.rejectRequest(requestId);
-await tx.wait();
-
-console.log(`Request ${requestId} rejected, buyer refunded`);
-```
-
 ### 2c. Cancel Request (REJECTED)
 
 **Actor**: Buyer
@@ -282,16 +204,6 @@ console.log(`Request ${requestId} rejected, buyer refunded`);
 - Caller must be original buyer
 
 **Effects**: Same as reject (full refund)
-
-**Example**:
-
-```typescript
-// Buyer cancels their own request
-const tx = await jobManager.cancelRequest(requestId);
-await tx.wait();
-
-console.log(`Request ${requestId} cancelled, refunded`);
-```
 
 ### 3. Process Job (ACCEPTED → COMPLETED)
 
@@ -376,27 +288,7 @@ Final Settlement:
 2. Refund buyer `computeAllowance + baseFee` (job incomplete)
 3. Set status to REJECTED
 
-**Example**:
-
-```typescript
-const request = await jobManager.getRequest(requestId);
-
-if (request.status === 1) {
-  // ACCEPTED
-  const stalledTime = Number(request.timestamp) + 24 * 3600;
-  const now = Math.floor(Date.now() / 1000);
-
-  if (now > stalledTime) {
-    console.log("Job stalled, reclaiming funds...");
-    const tx = await jobManager.reclaimStalled(requestId);
-    await tx.wait();
-    console.log("Funds reclaimed!");
-  } else {
-    const hoursLeft = (stalledTime - now) / 3600;
-    console.log(`${hoursLeft.toFixed(1)} hours until reclaim available`);
-  }
-}
-```
+**Timing**: Available after `request.timestamp + STALL_TIMEOUT` (24 hours)
 
 ## Job Lifecycle
 
@@ -429,13 +321,7 @@ openJob() or acceptRequest()
 
 ### 1. Open Job
 
-**Direct Model**:
-
-```typescript
-const tx = await jobManager.openJob(datasetId, buyerAddress, jobParams);
-const receipt = await tx.wait();
-const jobId = receipt.logs[0].args.jobId;
-```
+**Direct Model**: Call `openJob(datasetId, buyerAddress, jobParams)`
 
 **Request Model**: Automatically created via `acceptRequest()`
 
@@ -469,37 +355,7 @@ const jobId = receipt.logs[0].args.jobId;
 
 **Sequential Processing**: Rows MUST be pushed in order (0, 1, 2, ..., rowCount-1)
 
-**Example Loop**:
-
-```typescript
-const dataset = await loadDataset(datasetId); // From off-chain storage
-
-for (let rowIndex = 0; rowIndex < dataset.rowCount; rowIndex++) {
-  const rowPacked = dataset.rows[rowIndex];
-  const merkleProof = dataset.proofs[rowIndex];
-
-  try {
-    const tx = await jobManager.pushRow(
-      jobId,
-      rowPacked,
-      merkleProof,
-      rowIndex
-    );
-    await tx.wait();
-
-    console.log(`Processed row ${rowIndex + 1}/${dataset.rowCount}`);
-  } catch (error) {
-    console.error(`Failed to process row ${rowIndex}:`, error);
-    throw error;
-  }
-
-  // Optional: Check progress
-  if (rowIndex % 10 === 0) {
-    const progress = await jobManager.getJobProgress(jobId);
-    console.log(`Progress: ${progress.processedRows}/${progress.totalRows}`);
-  }
-}
-```
+**Process**: For each row, call `pushRow(jobId, rowPacked, merkleProof, rowIndex)`
 
 **Per-Row Processing**:
 
@@ -510,15 +366,7 @@ for (let rowIndex = 0; rowIndex < dataset.rowCount; rowIndex++) {
 5. **Accumulate**: Update operation-specific accumulators
 6. **Track Gas**: Deduct from allowance (if request-based)
 
-**Progress Tracking**:
-
-```typescript
-const { totalRows, processedRows, remainingRows } =
-  await jobManager.getJobProgress(jobId);
-
-console.log(`${processedRows}/${totalRows} rows processed`);
-console.log(`${remainingRows} rows remaining`);
-```
+**Progress Tracking**: Use `getJobProgress(jobId)` to retrieve `processedRows`, `totalRows`, and `remainingRows`
 
 ### 3. Finalize Job
 
@@ -527,111 +375,35 @@ console.log(`${remainingRows} rows remaining`);
 - All rows must be processed (`processedRows === totalRows`)
 - Job must be open (`isFinalized === false`)
 
-**Process**:
+**Call**: `finalize(jobId)`
 
-```typescript
-// Finalize job
-const tx = await jobManager.finalize(jobId);
-const receipt = await tx.wait();
-
-// Extract result from event
-const event = receipt.logs.find((log) => log.fragment?.name === "JobFinalized");
-
-const encryptedResult = event.args.result;
-const isOverflow = event.args.isOverflow;
-
-console.log("Job finalized!");
-console.log("Encrypted result:", encryptedResult);
-```
+**Emits**: `JobFinalized` event with encrypted `result` and `isOverflow` flag
 
 **Internal Steps**:
 
-1. **Compute Result**: Based on operation type
+1. **Compute Result**: Based on operation type (COUNT → kept, SUM → agg, AVG_P → agg/divisor, etc.)
 
-   ```typescript
-   if (op === COUNT) result = kept;
-   if (op === SUM) result = agg;
-   if (op === AVG_P) result = agg / divisor;
-   if (op === WEIGHTED_SUM) result = agg;
-   if (op === MIN) result = minV;
-   if (op === MAX) result = maxV;
-   ```
+2. **Post-Process**: Apply clamping and rounding if configured
 
-2. **Post-Process**: Apply clamping and rounding
+3. **K-Anonymity Check**: Return sentinel value (type(uint128).max) if threshold not met
 
-   ```solidity
-   if (clampMin > 0 || clampMax > 0) {
-       result = _clamp(result, clampMin, clampMax);
-   }
-   if (roundBucket > 0) {
-       result = _roundBucket(result, roundBucket);
-   }
-   ```
+4. **Set Permissions**: Allow buyer to decrypt result and overflow flag
 
-3. **K-Anonymity Check**:
+5. **Update Cooldown**: Record timestamp for buyer-dataset pair
 
-   ```solidity
-   ebool meetsAnonymity = FHE.ge(kept, kAnonymity);
-   euint256 failureValue = FHE.asEuint256(type(uint128).max);
-   result = FHE.select(meetsAnonymity, result, failureValue);
-   ```
-
-4. **Set Permissions**:
-
-   ```solidity
-   FHE.allowThis(result);
-   FHE.allow(result, buyer);
-   FHE.allow(isOverflow, buyer);
-   ```
-
-5. **Update Cooldown**:
-
-   ```solidity
-   bytes32 key = keccak256(abi.encodePacked(buyer, datasetId));
-   _lastUse[key] = uint64(block.timestamp);
-   ```
-
-6. **Settle Payments** (if request-based):
-   - Pay seller: `baseFee + gasDebtToSeller`
-   - Refund buyer: `computeAllowance`
+6. **Settle Payments** (if request-based): Pay seller baseFee + gasDebt, refund buyer unused allowance
 
 ### 4. Decrypt Result
 
 **Actor**: Buyer
 
-**Function**: Off-chain decryption via FHEVM SDK
+**Process**:
 
-```typescript
-import { createInstance } from "@fhevm/react";
-
-// Get job result
-const { result, isOverflow } = await jobManager.getJobResult(jobId);
-
-// Create FHEVM instance
-const fhevmInstance = await createInstance({
-  chainId,
-  provider,
-  network,
-});
-
-// Decrypt result
-const decryptedResult = await fhevmInstance.decrypt(result, buyerAddress);
-
-// Decrypt overflow flag
-const overflowFlag = await fhevmInstance.decrypt(isOverflow, buyerAddress);
-
-// Check k-anonymity
-const K_ANONYMITY_FAILURE = BigInt(2 ** 128 - 1);
-
-if (decryptedResult === K_ANONYMITY_FAILURE) {
-  console.log("Result suppressed: K-anonymity threshold not met");
-} else if (overflowFlag) {
-  console.warn("Warning: Arithmetic overflow detected");
-  console.log("Result (may be invalid):", decryptedResult);
-} else {
-  console.log("Valid result:", decryptedResult);
-}
-```
+1. Get encrypted result via `getJobResult(jobId)` → returns `result` and `isOverflow`
+2. Use FHEVM instance to decrypt both values
+3. Check for k-anonymity sentinel value (`2^128 - 1`)
+4. Check overflow flag
+5. Use decrypted value if valid
 
 ## Payment Flow
 
@@ -708,38 +480,11 @@ debt: 0.01 ETH           debt: 0.03 ETH
 
 ### Top-Up Allowance
 
-If buyer notices allowance running low:
-
-```typescript
-const request = await jobManager.getRequest(requestId);
-
-if (request.computeAllowance < ethers.parseEther("0.1")) {
-  console.log("Allowance low, topping up...");
-
-  const topUp = ethers.parseEther("0.3");
-  const tx = await jobManager.topUpAllowance(requestId, {
-    value: topUp,
-  });
-  await tx.wait();
-
-  console.log(`Added ${topUp} to allowance`);
-}
-```
+If buyer's `computeAllowance` is running low during job processing, they can add more funds via `topUpAllowance(requestId)` with additional ETH.
 
 ### Manual Payout
 
-Seller can request payout before threshold:
-
-```typescript
-const request = await jobManager.getRequest(requestId);
-
-if (request.gasDebtToSeller > 0) {
-  const tx = await jobManager.requestPayout(requestId);
-  await tx.wait();
-
-  console.log(`Received payout of ${request.gasDebtToSeller}`);
-}
-```
+Seller can manually trigger payout of accumulated `gasDebtToSeller` before auto-payout threshold via `requestPayout(requestId)`.
 
 ## State Diagrams
 
@@ -979,20 +724,10 @@ jobManager.on("RequestSubmitted", async (reqId, dsId, buyer) => {
 
 ### For Buyers
 
-1. **Estimate Costs**: Use gas benchmarking to estimate required allowance
-
-   ```typescript
-   import { estimateJobGas } from "../misc/estimateJobGas_log";
-
-   const estimatedGas = estimateJobGas(rows, columns, "COUNT", filterBytes);
-   const gasPrice = await provider.getFeeData();
-   const costWei = estimatedGas * gasPrice.gasPrice;
-   const allowance = costWei * 1.2n; // 20% buffer
-   ```
-
-2. **Monitor Allowance**: Top up if running low
-3. **Set Stall Alerts**: Check for 24h inactivity
-4. **Validate Results**: Check k-anonymity sentinel and overflow flag
+1. **Estimate Costs**: Use gas benchmarking (`estimateJobGas()` or `estimateJobAllowance()`) to calculate expected allowance.
+2. **Monitor Allowance**: Top up if running low during processing
+3. **Set Stall Alerts**: Check for 24h inactivity and reclaim if needed
+4. **Validate Results**: Always check k-anonymity sentinel (`2^128-1`) and overflow flag after decryption
 5. **Use Post-Processing**: Add clamping and rounding for additional privacy
 
 ### For Sellers
@@ -1016,6 +751,5 @@ jobManager.on("RequestSubmitted", async (reqId, dsId, buyer) => {
 **Related Documentation**:
 
 - [Architecture Guide](ARCHITECTURE.md)
-- [Smart Contracts Reference](SMART_CONTRACTS.md)
 - [Filter VM Specification](FILTER_VM.md)
-- [Gas Benchmarking](gas_benchmarking.md)
+- [Gas Benchmarking](GAS_BENCHMARKING.md)

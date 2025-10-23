@@ -41,69 +41,106 @@ Mini-DCM is a decentralized marketplace where:
 - **MetaMask Integration**: EIP-6963 multi-wallet support
 - **Encrypted Data Handling**: Built-in FHEVM integration
 
-## Quick Start
+## Setup and Deployment
 
-### Prerequisites
+### 1. Prerequisites
 
 - **Node.js**: Version 20 or higher
 - **MetaMask**: Browser extension for wallet connectivity
 
-### Installation
+### 2. Installation
 
-1. **Clone and install dependencies**
-
-   ```bash
-   git clone <repository-url>
-   cd mini-dcm
-   npm install
-   ```
-
-2. **Configure Hardhat environment variables**
-
-   ```bash
-   cd packages/fhevm-hardhat-template
-
-   # Set your wallet mnemonic
-   npx hardhat vars set MNEMONIC
-
-   # Set Infura API key for Sepolia deployment
-   npx hardhat vars set INFURA_API_KEY
-
-   # Optional: Etherscan API key for contract verification
-   npx hardhat vars set ETHERSCAN_API_KEY
-   ```
-
-3. **Start local development environment**
-
-   ```bash
-   # Terminal 1: Start local FHEVM-enabled Hardhat node
-   npm run hardhat-node
-
-   # Terminal 2: Launch frontend (automatically deploys contracts)
-   npm run dev:mock
-   ```
-
-4. **Configure MetaMask**
-
-   Add the local Hardhat network to MetaMask:
-   - Network Name: `Hardhat`
-   - RPC URL: `http://127.0.0.1:8545`
-   - Chain ID: `31337`
-   - Currency Symbol: `ETH`
-
-5. **Open application**
-
-   Navigate to `http://localhost:3000` and connect MetaMask
-
-### Deploy to Sepolia Testnet
+Clone the repository and install dependencies. The `postinstall` script will automatically deploy contracts to a local Hardhat node.
 
 ```bash
-# Deploy contracts
-npm run deploy:sepolia
-
-# Start frontend (will auto-detect Sepolia deployment)
-npm run dev:mock
+git clone <repository-url>
+cd mini-dcm
+npm install
 ```
+
+### 3. Environment Configuration (Optional)
+
+To deploy to a public testnet, you'll need to configure a wallet mnemonic and an RPC provider API key.
+
+```bash
+cd packages/fhevm-hardhat-template
+
+# Set your wallet mnemonic
+npx hardhat vars set MNEMONIC
+
+# Set Infura API key for Sepolia deployment
+npx hardhat vars set INFURA_API_KEY
+
+# Optional: Etherscan API key for contract verification
+npx hardhat vars set ETHERSCAN_API_KEY
+```
+
+### 4. Local Development
+
+1.  **Start Local Hardhat Node**
+
+    This command starts a local, FHEVM-enabled blockchain.
+
+    ```bash
+    # Terminal 1
+    npm run hardhat-node
+    ```
+
+2.  **Launch Frontend**
+
+    This command starts the Next.js application. If contracts aren't already deployed on the local node, it will deploy them.
+
+    ```bash
+    # Terminal 2
+    npm run dev:mock
+    ```
+
+3.  **Configure MetaMask**
+
+    Add the local Hardhat network to MetaMask:
+    - **Network Name**: `Hardhat`
+    - **RPC URL**: `http://127.0.0.1:8545`
+    - **Chain ID**: `31337`
+    - **Currency Symbol**: `ETH`
+
+4.  **Open Application**
+
+    Navigate to `http://localhost:3000` and connect your wallet.
+
+### 5. Testnet & Mainnet Deployment
+
+#### Sepolia Testnet
+
+1.  **Fund Wallet**: Ensure the wallet configured in your environment variables has Sepolia ETH ([faucet](https://sepoliafaucet.com/)).
+2.  **Deploy Contracts**:
+    ```bash
+    npm run deploy:sepolia
+    ```
+3.  **Run Frontend**: The frontend will automatically detect the Sepolia deployment.
+    ```bash
+    npm run dev:mock
+    ```
+
+#### Mainnet
+
+⚠️ **Not recommended yet** - FHEVM is in active development.
+
+When ready:
+
+1.  Update `hardhat.config.ts` with a mainnet RPC endpoint.
+2.  Thoroughly audit all smart contracts.
+3.  Deploy with `npx hardhat deploy --network mainnet`.
+
+### 6. Frontend Deployment (Netlify)
+
+The frontend is configured for one-click deployment on Netlify.
+
+- **Build command**: `npm run build:shared && cd packages/site && npm run build`
+- **Publish directory**: `packages/site/.next`
+- **Environment**: Node 20
+- **Plugin**: `@netlify/plugin-nextjs`
+
+Set the `NETLIFY=true` environment variable in your Netlify settings to prevent the build command from trying to redeploy contracts.
 
 ## Core Concepts
 
@@ -151,11 +188,10 @@ Stack-based bytecode interpreter for encrypted data filtering:
 mini-dcm/
 ├── docs/                              # Documentation
 │   ├── ARCHITECTURE.md                # System design and architecture
-│   ├── SMART_CONTRACTS.md             # Contract reference guide
 │   ├── REQUEST_JOB_LIFECYCLE.md       # Workflow documentation
 │   ├── FILTER_VM.md                   # Filter bytecode specification
 │   ├── FRONTEND_DEVELOPMENT.md        # Frontend development guide
-│   ├── gas_benchmarking.md            # Gas cost analysis methodology
+│   ├── GAS_BENCHMARKING.md            # Gas cost analysis methodology
 │   └── TEST_MATRIX_SUMMARY.md         # Gas benchmark test matrix
 │
 ├── packages/
@@ -209,49 +245,14 @@ mini-dcm/
         └── gas_benchmark.ipynb        # Interactive analysis
 ```
 
-## Available Scripts
-
-### Root Level
-
-| Command                       | Description                                        |
-| ----------------------------- | -------------------------------------------------- |
-| `npm run hardhat-node`        | Start local FHEVM Hardhat node (port 8545)         |
-| `npm run dev:mock`            | Run frontend in development mode (with local node) |
-| `npm run deploy:hardhat-node` | Deploy contracts to local node                     |
-| `npm run deploy:sepolia`      | Deploy contracts to Sepolia testnet                |
-| `npm run generate-abi`        | Extract contract ABIs for frontend                 |
-| `npm run build:shared`        | Build shared utilities package                     |
-| `npm run dev:shared`          | Watch mode for shared package                      |
-
-### Smart Contracts (`packages/fhevm-hardhat-template`)
-
-| Command            | Description                         |
-| ------------------ | ----------------------------------- |
-| `npm run compile`  | Compile all Solidity contracts      |
-| `npm test`         | Run complete test suite             |
-| `npm run coverage` | Generate test coverage report       |
-| `npm run lint`     | Run Solidity and TypeScript linters |
-| `npm run clean`    | Remove build artifacts              |
-
-### Frontend (`packages/site`)
-
-| Command            | Description                          |
-| ------------------ | ------------------------------------ |
-| `npm run dev:mock` | Development server with Hardhat node |
-| `npm run build`    | Production build                     |
-| `npm run start`    | Serve production build               |
-| `npm run lint`     | Run Next.js linting                  |
-
-## Documentation
+## More Documentation
 
 ### Project Documentation
 
 - **[Architecture Guide](docs/ARCHITECTURE.md)** - System design, data flow, and security model
-- **[Smart Contracts Reference](docs/SMART_CONTRACTS.md)** - Detailed contract documentation
 - **[Request & Job Lifecycle](docs/REQUEST_JOB_LIFECYCLE.md)** - Workflow and payment system
 - **[Filter VM Specification](docs/FILTER_VM.md)** - Bytecode filter system
 - **[Frontend Development](docs/FRONTEND_DEVELOPMENT.md)** - React app development guide
-- **[Gas Benchmarking](docs/gas_benchmarking.md)** - Gas cost analysis and optimization
 
 ### External Resources
 
@@ -322,7 +323,7 @@ Mini-DCM includes a sophisticated gas benchmarking system:
 - **34% MAPE**: Mean absolute percentage error
 - **Predictive Estimator**: Pre-compute gas costs for better UX
 
-See [Gas Benchmarking Guide](docs/gas_benchmarking.md) for details.
+See the full **[Gas Benchmarking Guide](docs/GAS_BENCHMARKING.md)** for a detailed methodology and analysis.
 
 ## Security Considerations
 
@@ -347,43 +348,133 @@ See [Gas Benchmarking Guide](docs/gas_benchmarking.md) for details.
 - **Stall Protection**: Buyer reclaim after 24-hour timeout
 - **Threshold Payouts**: Minimize transaction costs
 
-## Deployment
+## Current Limitations & Future Improvements
 
-### Local Development
+### Data Type Constraints
 
-Already configured! The `postinstall` script automatically:
+**Integer-Only Columns**: All data columns must be integer-typed (euint8, euint32, euint64)
 
-1. Starts a Hardhat node
-2. Deploys contracts
-3. Generates ABIs for frontend
+- Mix different bit-widths within a dataset
+- All values upcast to euint64 for uniform computation
+- No support for strings, floats, or complex structures in v1
+- Categorical data must be encoded as integers
+- **No null values**: Every column must contain data (specific sentinel values could represent null in future)
 
-### Sepolia Testnet
+**Column Limits**: Maximum 32 columns per dataset
 
-1. Fund wallet with Sepolia ETH ([faucet](https://sepoliafaucet.com/))
-2. Deploy: `npm run deploy:sepolia`
-3. Frontend auto-detects deployment via `packages/site/abi/`
+- FHE encryption library has 2048-bit limit per operation
+- Each euint64 = 64 bits → 2048/64 = 32 columns maximum
+- WEIGHTED_SUM operations recommended for ≤10 columns for gas efficiency
 
-### Production (Mainnet)
+### Filter VM Constraints
 
-⚠️ **Not recommended yet** - FHEVM is in active development
+**Comparison Restrictions**:
 
-When ready:
+- Only compare encrypted fields against plaintext constants
+- No field-to-field comparisons (e.g., `Debt > Income` not supported)
+- Workaround: Run multiple queries with different constant thresholds
 
-1. Update `hardhat.config.ts` with mainnet RPC
-2. Thoroughly audit contracts
-3. Test on testnet extensively
-4. Deploy with `npx hardhat deploy --network mainnet`
+**Stack Depth**: Maximum 8 elements per stack (value, const, bool)
 
-## Netlify Deployment
+- Limits deeply nested boolean expressions
+- Complex filters may need to be split into multiple jobs
 
-The frontend is configured for Netlify deployment:
+### Operation Limitations
 
-- Build command: `npm run build:shared && cd packages/site && npm run build`
-- Publish directory: `packages/site/.next`
-- Environment: Node 20
-- Plugin: `@netlify/plugin-nextjs`
+**No Grouping**: No GROUP BY functionality
 
-Set `NETLIFY=true` environment variable to skip Hardhat deployment during build.
+- Cannot compute "sum of income per country" in single query
+- Run separate queries for each group value
+
+**Limited Arithmetic**: Row-wise math restricted to linear combinations
+
+- WEIGHTED_SUM supports only positive weights
+- No column-to-column multiplication or non-linear functions
+- No division by encrypted values (AVG_P uses plaintext divisor only)
+
+**Overflow Handling**: Overflow detection provided but not prevented
+
+- Result includes encrypted overflow flag
+- Buyer must check flag after decryption and handle accordingly
+
+### Processing Constraints
+
+**Sequential Row Order**: Rows must be processed in ascending order (0, 1, 2, ...)
+
+- Reduces storage costs for state tracking
+- Enforces integrity and prevents row skipping
+- Cannot process rows in parallel or out of order
+
+**Dataset Deletion Risk**: Deleting a dataset mid-job prevents job completion
+
+- Jobs hold cached dataset metadata, but rely on owner for row processing
+- Consider job lifecycle before dataset deletion
+
+**CSV Header Assumption**: First row in CSV files always treated as header and skipped
+
+### Privacy & Security Considerations
+
+**K-Anonymity Responsibility**: Data seller sets k-anonymity value
+
+- No automatic calculation or validation
+- Seller must choose appropriate value based on data sensitivity
+
+**Sentinel Values**:
+
+- K-anonymity failure returns `type(uint128).max` (2^128 - 1)
+- Buyers must check for this sentinel value after decryption
+- Overflow flag is separate encrypted boolean
+
+### Gas & Scalability
+
+**Job/Request Accumulation**: Large numbers of jobs/requests may affect gas costs
+
+- Consider pagination or archival strategies for production
+- Future: Separate state management contract
+
+**Row-by-Row Processing**: Each row requires separate transaction
+
+- High gas costs for large datasets
+- Future: Batch processing or off-chain computation with ZK proofs
+
+### Future Improvements
+
+**Planned Enhancements**:
+
+1. **Off-Chain ZK Preflight Checks**
+   - Validate job parameters before expensive on-chain computation
+   - Reject invalid requests with ZK proofs
+   - Reduce wasted gas on malformed queries
+
+2. **Batch Row Processing**
+   - Process multiple rows per transaction
+   - Significantly reduce gas costs for large datasets
+
+3. **Fast Processing Incentives**
+   - Bonus payments for rapid job completion
+   - Encourage timely data provider responses
+
+4. **Enhanced Data Types**
+   - Null value support via sentinel values
+   - String encoding strategies
+   - Floating-point approximations
+
+5. **Advanced Operations**
+   - Field-to-field comparisons
+   - GROUP BY with encrypted grouping keys
+   - More complex arithmetic operations
+
+6. **Contract Modularization**
+   - Split functionality into specialized contracts
+   - Reduce individual contract complexity
+   - Enable easier upgrades
+
+7. **Encrypted Job Parameters**
+   - Encrypt operation types, filters, and weights
+   - Only divisor remains plaintext for AVG_P
+   - Enhanced query privacy
+
+**See [Architecture Guide](docs/ARCHITECTURE.md) for detailed technical design and contract implementation details.**
 
 ## Contributing
 
@@ -441,4 +532,4 @@ Built with:
 
 **Built with privacy at its core. Powered by Fully Homomorphic Encryption.**
 
-For questions or support, visit our [GitHub Issues](https://github.com/your-repo/mini-dcm/issues) or join the [Zama Discord](https://discord.com/invite/zama).
+For questions or support, visit our [GitHub Issues](https://github.com/ego-errante/mini-dcm/issues) or join the [Zama Discord](https://discord.com/invite/zama).

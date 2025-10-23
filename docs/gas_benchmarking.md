@@ -417,7 +417,7 @@ packages/fhevm-hardhat-template/test/
 └── filter-dsl.ts                # Filter bytecode utilities
 
 docs/
-├── gas_benchmarking.md          # This guide
+├── GAS_BENCHMARKING.md          # This guide
 └── TEST_MATRIX_SUMMARY.md       # Quick reference (all 63 tests)
 
 misc/

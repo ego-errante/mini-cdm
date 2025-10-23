@@ -117,116 +117,72 @@ Mini-DCM is a decentralized marketplace for confidential data analytics built on
 
 **Purpose**: Manages dataset registration, metadata, and ownership.
 
-**Key State Variables**:
+**Responsibilities**:
 
-```solidity
-mapping(uint256 => Dataset) private _datasets;
-uint256[] private _datasetIds;  // For enumeration
-address private _jobManager;    // Reference to JobManager
-```
+- Store dataset metadata (merkle root, schema, owner, k-anonymity, cooldown)
+- Validate dataset ownership for job operations
+- Provide enumeration for frontend display
+- Link to JobManager for access control
 
-**Dataset Structure**:
+**Key Properties per Dataset**:
 
-```solidity
-struct Dataset {
-    bytes32 merkleRoot;      // Cryptographic commitment to data
-    uint256 numColumns;      // Schema: number of fields per row
-    uint256 rowCount;        // Total rows in dataset
-    address owner;           // Dataset owner/seller
-    bool exists;             // Existence flag
-    euint32 kAnonymity;      // Min result size (encrypted)
-    uint32 cooldownSec;      // Time between queries per buyer
-}
-```
+- Cryptographic commitment (merkle root)
+- Schema definition (numColumns, rowCount)
+- Privacy settings (encrypted k-anonymity, cooldown period)
+- Owner address for access control
 
-**Core Functions**:
-
-- `commitDataset()`: Register new dataset with metadata
-- `deleteDataset()`: Remove dataset (owner only)
-- `getDataset()`: Retrieve dataset metadata
-- `isDatasetOwner()`: Verify ownership
-- `getAllDatasets()`: Enumerate all datasets
+**See contract source**: `packages/fhevm-hardhat-template/contracts/DatasetRegistry.sol`
 
 ### JobManager
 
 **Purpose**: Orchestrates job execution, manages requests, and handles payments.
 
-**Key State Variables**:
+**Responsibilities**:
 
-```solidity
-mapping(uint256 => Job) private _jobs;
-mapping(uint256 => JobState) private _state;
-mapping(uint256 => JobRequest) private _requests;
-mapping(uint256 => uint256) private _jobToRequest;
-mapping(bytes32 => uint64) private _lastUse;  // Cooldown tracking
-```
+**Job Management**:
 
-**Job Structure**:
+- Create jobs (direct or via accepted requests)
+- Process rows sequentially with Merkle verification
+- Execute Filter VM on encrypted data
+- Maintain operation-specific accumulators
+- Enforce k-anonymity and privacy policies
 
-```solidity
-struct Job {
-    JobParams params;        // Operation configuration
-    address buyer;           // Result recipient
-    uint256 datasetId;       // Dataset reference
-    bool isFinalized;        // Completion status
-    euint256 result;         // Encrypted result
-    bytes32 merkleRoot;      // Cached for verification
-    uint256 rowCount;        // Cached for validation
-    uint32 cooldownSec;      // Cached for enforcement
-    euint32 kAnonymity;      // Cached for privacy check
-}
-```
+**Request System**:
 
-**JobState Structure** (Accumulators):
+- Accept buyer requests with escrow
+- Track request lifecycle (PENDING → ACCEPTED → COMPLETED/REJECTED)
+- Link requests to jobs for payment tracking
 
-```solidity
-struct JobState {
-    euint64 agg;             // SUM/WEIGHTED_SUM accumulator
-    euint64 minV;            // MIN tracking
-    euint64 maxV;            // MAX tracking
-    euint32 kept;            // COUNT of kept rows (for k-anonymity)
-    ebool minMaxInit;        // MIN/MAX initialization flag
-    ebool isOverflow;        // Overflow detection
-}
-```
+**Payment Handling**:
 
-**Core Functions**:
+- Track gas costs per operation
+- Accumulate seller debt with threshold-based auto-payout
+- Handle final settlement on job completion
+- Support stall protection and reclaim
 
-- `openJob()`: Initialize job for buyer
-- `pushRow()`: Process encrypted row with Merkle proof
-- `finalize()`: Complete job and release result
-- `submitRequest()`: Buyer creates request
-- `acceptRequest()`: Seller accepts and creates job
-- `rejectRequest()`: Seller rejects request
-- `reclaimStalled()`: Buyer reclaims from stalled job
+**Privacy Enforcement**:
+
+- Verify cooldown periods
+- Enforce k-anonymity thresholds
+- Track overflow conditions
+- Apply post-processing (clamp, round)
+
+**See contract source**: `packages/fhevm-hardhat-template/contracts/JobManager.sol`
 
 ### RowDecoder
 
-**Purpose**: Parse and decode encrypted row data from packed format.
+**Purpose**: Parse and decode encrypted row data from packed binary format.
 
-**Key Function**:
+**Functionality**:
 
-```solidity
-function decodeRowTo64(bytes calldata rowPacked)
-    internal
-    returns (euint64[] memory fields)
-```
+- Validate packed row structure (type tags, lengths, proofs)
+- Extract encrypted ciphertexts and ZK proofs
+- Convert external encrypted values to internal FHE types
+- Upcast all types to euint64 for uniform processing
 
-**Packed Row Format**:
+**Binary Format**: Each field encoded as TypeTag | ExtLen | ExtCipher | ProofLen | Proof
 
-Each field in a row is encoded as:
-
-```
-┌─────────┬──────────┬─────────────┬───────────┬────────┐
-│ TypeTag │ ExtLen   │ ExtCipher   │ ProofLen  │ Proof  │
-│ (uint8) │ (uint16) │ (bytes)     │ (uint16)  │ (bytes)│
-└─────────┴──────────┴─────────────┴───────────┴────────┘
-  1 byte    2 bytes    ExtLen bytes  2 bytes     ProofLen bytes
-
-TypeTag: 1=euint8, 2=euint32, 3=euint64
-```
-
-**Type Casting**: All field types are upcast to `euint64` for uniform processing in JobManager.
+**See contract source**: `packages/fhevm-hardhat-template/contracts/RowDecoder.sol`
 
 ## Data Flow
 
@@ -260,62 +216,16 @@ TypeTag: 1=euint8, 2=euint32, 3=euint64
 └─────────────────┘
 ```
 
-### Request-Based Job Flow
+### Complete Workflow Overview
 
-```
-┌───────┐                          ┌────────┐
-│ Buyer │                          │ Seller │
-└───┬───┘                          └───┬────┘
-    │                                  │
-    │ 1. submitRequest()               │
-    │    + baseFee + computeAllowance  │
-    ▼                                  │
-┌──────────────┐                      │
-│ JobManager   │                      │
-│ • Create req │                      │
-│ • Hold funds │                      │
-│ Status: PENDING                     │
-└──────────────┘                      │
-    │                                  │
-    │ 2. Event: RequestSubmitted       │
-    ├─────────────────────────────────►│
-    │                                  │
-    │                                  │ 3a. acceptRequest()
-    │                                  │     (creates Job)
-    │◄─────────────────────────────────┤
-    │                                  │
-┌──────────────┐                      │
-│ JobManager   │                      │
-│ • Create job │                      │
-│ • Link to req│                      │
-│ Status: ACCEPTED                    │
-└──────────────┘                      │
-    │                                  │
-    │                                  │ 4. pushRow() loop
-    │                                  │    • Verify Merkle proof
-    │◄─────────────────────────────────┤    • Track gas usage
-    │                                  │    • Auto-payout if threshold
-    │                                  │
-    │                                  │ 5. finalize()
-    │                                  │    • Final settlement
-    │◄─────────────────────────────────┤    • Pay seller
-    │                                  │    • Refund buyer excess
-┌──────────────┐                      │
-│ JobManager   │                      │
-│ • Compute    │                      │
-│   result     │                      │
-│ • Pay seller │                      │
-│ • Refund     │                      │
-│   buyer      │                      │
-│ Status: COMPLETED                   │
-└──────────────┘                      │
-    │                                  │
-    │ 6. Buyer decrypts result        │
-    ▼                                  │
-┌───────┐                              │
-│ Buyer │                              │
-└───────┘                              │
-```
+**See [Request & Job Lifecycle](REQUEST_JOB_LIFECYCLE.md) for detailed flow diagrams and state transitions.**
+
+**Key Workflows**:
+
+1. **Dataset Creation**: Seller encrypts data → builds Merkle tree → commits metadata on-chain
+2. **Request Submission**: Buyer submits request with payment → held in escrow
+3. **Job Processing**: Seller accepts → processes rows sequentially → finalizes with settlement
+4. **Result Decryption**: Buyer decrypts result → checks k-anonymity and overflow flags
 
 ### Row Processing Pipeline
 
@@ -376,103 +286,28 @@ TypeTag: 1=euint8, 2=euint32, 3=euint64
 
 ## Payment System
 
-### Request-Based Payment Model
+Mini-DCM supports two payment models:
 
-**Payment Components**:
+1. **Direct Jobs**: Off-chain payment arrangements
+2. **Request-Based**: On-chain escrow with automatic gas tracking and settlement
 
-1. **Base Fee**: Fixed payment for dataset access (paid on completion)
-2. **Compute Allowance**: Gas budget for job processing (deducted per operation)
-3. **Gas Debt**: Accumulated costs owed to seller
+### Request-Based Payment Architecture
 
-**Payment Flow**:
+**Components**:
 
-```
-┌─────────────────────────────────────────────────────────────────┐
-│ Buyer submits request with msg.value                            │
-│   • baseFee: Fixed fee for seller                               │
-│   • computeAllowance: Gas budget for computation                │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-                         ▼
-┌─────────────────────────────────────────────────────────────────┐
-│ Funds held in escrow (JobManager contract)                      │
-└────────────────────────┬────────────────────────────────────────┘
-                         │
-         ┌───────────────┴───────────────┐
-         │                               │
-         ▼                               ▼
-┌──────────────────┐          ┌────────────────────┐
-│ acceptRequest()  │          │ pushRow() calls    │
-│ • Tracks gas     │          │ • Track gas/tx     │
-│ • Deduct from    │          │ • Accumulate debt  │
-│   allowance      │          │ • Auto-payout at   │
-│ • Add to debt    │          │   threshold        │
-└──────────────────┘          └──────┬─────────────┘
-                                     │
-                                     ▼
-                         ┌────────────────────────┐
-                         │ Threshold reached?     │
-                         │ (debt ≥ 0.05 ETH)      │
-                         └──────┬─────────────────┘
-                                │
-                    ┌───────────┴──────────┐
-                    │                      │
-                    ▼                      ▼
-          ┌──────────────────┐    ┌────────────┐
-          │ Auto-payout to   │    │ Continue   │
-          │ seller           │    │ tracking   │
-          │ • Reset debt     │    └────────────┘
-          └──────────────────┘
-                    │
-                    ▼
-         ┌────────────────────────────┐
-         │ finalize()                 │
-         │ • Pay remaining debt       │
-         │ • Pay base fee             │
-         │ • Refund unused allowance  │
-         └────────────────────────────┘
-```
+- **Base Fee**: Fixed payment for dataset access (held until job completion)
+- **Compute Allowance**: Gas budget deducted per operation (acceptRequest, pushRow, finalize)
+- **Gas Debt**: Accumulated costs owed to seller (auto-payout at threshold)
+- **Payment Threshold**: Default 0.05 ETH triggers automatic seller payout
 
-**Gas Tracking Logic**:
+**Key Features**:
 
-```solidity
-function _trackGasAndMaybePayout(uint256 requestId, uint256 gasBefore) {
-    uint256 gasUsed = gasBefore - gasleft();
-    uint256 cost = gasUsed * tx.gasprice;
+- Strict allowance enforcement (transaction reverts if insufficient)
+- Automatic threshold-based payouts (reduces transaction count)
+- Final settlement on job completion
+- Stall protection: buyer can reclaim after 24 hours of inactivity
 
-    // STRICT: Must have sufficient allowance
-    require(cost <= request.computeAllowance, "InsufficientAllowance");
-
-    // Deduct and accumulate
-    request.computeAllowance -= cost;
-    request.gasDebtToSeller += cost;
-
-    // Auto-payout if threshold reached
-    if (request.gasDebtToSeller >= paymentThreshold) {
-        _payoutSeller(requestId);
-    }
-}
-```
-
-### Stall Protection
-
-If seller stops processing after 24 hours:
-
-```solidity
-function reclaimStalled(uint256 requestId) external {
-    require(msg.sender == request.buyer);
-    require(block.timestamp > request.timestamp + STALL_TIMEOUT);
-
-    // Pay seller for work done
-    if (request.gasDebtToSeller > 0) {
-        _payoutSeller(requestId);
-    }
-
-    // Refund buyer: remaining allowance + base fee (job incomplete)
-    uint256 refund = request.computeAllowance + request.baseFee;
-    // ... transfer refund
-}
-```
+**See [Request & Job Lifecycle](REQUEST_JOB_LIFECYCLE.md) for detailed payment flows, examples, and state diagrams.**
 
 ## Security Model
 
@@ -562,213 +397,104 @@ contract JobManager is ReentrancyGuard {
 
 ## Frontend Architecture
 
-### Technology Stack
+**Built with**: Next.js 15, React 19, TanStack Query, Ethers.js v6, FHEVM SDK, Radix UI, Tailwind CSS
 
-- **Next.js 15**: App router, server components, client components
-- **React 19**: Modern hooks, concurrent features
-- **TanStack Query**: Data fetching, caching, synchronization
-- **Ethers.js v6**: Blockchain interaction
-- **FHEVM SDK**: Encryption/decryption via Zama relayer
-- **Radix UI**: Accessible component primitives
-- **Tailwind CSS**: Utility-first styling
+**Architecture Pattern**:
 
-### Context Architecture
+- **Global Context** (CDMProvider): Wallet, FHEVM instance, contract hooks
+- **Server State** (TanStack Query): Blockchain data with caching and auto-refresh
+- **Component Patterns**: Modals for actions, drawers for details, tables for activity
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      CDMProvider                             │
-│                                                               │
-│  ┌──────────────────────────────────────────────────────┐   │
-│  │ MetaMask State (useMetaMaskEthersSigner)             │   │
-│  │ • provider, chainId, accounts                        │   │
-│  │ • ethersSigner, ethersReadonlyProvider               │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                          │                                   │
-│  ┌───────────────────────▼──────────────────────────────┐   │
-│  │ FHEVM State (useFhevm)                               │   │
-│  │ • fhevmInstance (encryption/decryption)              │   │
-│  │ • status, error                                      │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                          │                                   │
-│  ┌───────────────────────┴──────────────────────────────┐   │
-│  │ Contract Hooks                                       │   │
-│  │ • useDatasetRegistry (TanStack Query)                │   │
-│  │ • useJobManager (TanStack Query)                     │   │
-│  │ • useGasPrice                                        │   │
-│  └──────────────────────────────────────────────────────┘   │
-│                                                               │
-│  Consumed by: useCDMContext()                                │
-└───────────────────────────────────────────────────────────────┘
-```
+**Key Integration Points**:
 
-### Component Hierarchy
+- MetaMask wallet via EIP-6963
+- FHEVM instance for encryption/decryption
+- Contract hooks wrapping ethers.js with TanStack Query
+- Real-time updates via polling and event listeners
 
-```
-App Layout
-└─ Providers
-   └─ CDMProvider
-      └─ Page
-         ├─ Overview
-         │  ├─ StatusBadgesPopover (network/wallet status)
-         │  ├─ CreateDatasetModal
-         │  ├─ DatasetCard (per dataset)
-         │  │  ├─ NewRequestModal
-         │  │  └─ DatasetDrawer
-         │  │     ├─ ActivityTable
-         │  │     ├─ JobProcessorModal
-         │  │     └─ ViewResultModal
-         │  └─ ...
-         └─ ...
-```
-
-### Data Flow Pattern
-
-**TanStack Query Pattern**:
-
-```typescript
-// In useDatasetRegistry hook
-const getDatasetsQuery = useQuery({
-  queryKey: ["datasets", contractAddress],
-  queryFn: async () => {
-    const contract = new ethers.Contract(address, abi, provider);
-    const datasets = await contract.getAllDatasets();
-    return datasets;
-  },
-  enabled: isDeployed && !!ethersReadonlyProvider,
-  refetchInterval: 5000, // Auto-refresh
-});
-
-// In component
-const { getDatasetsQuery } = datasetRegistry;
-const datasets = getDatasetsQuery.data || [];
-```
-
-**Mutation Pattern**:
-
-```typescript
-const commitDatasetMutation = useMutation({
-  mutationFn: async (params) => {
-    const contract = new ethers.Contract(address, abi, signer);
-    const tx = await contract.commitDataset(...params);
-    await tx.wait();
-  },
-  onSuccess: () => {
-    queryClient.invalidateQueries(["datasets"]);
-  },
-});
-```
+**See [Frontend Development](FRONTEND_DEVELOPMENT.md) for detailed guide, code examples, and testing.**
 
 ## Package Organization
 
-### Monorepo Structure
+### Monorepo Structure (npm workspaces)
 
 ```
 mini-dcm/
 ├─ packages/
-│  ├─ fhevm-hardhat-template/    [Contracts + Tests]
-│  │  • Solidity contracts
-│  │  • Hardhat configuration
-│  │  • Deployment scripts
-│  │  • Comprehensive tests
-│  │
-│  ├─ site/                       [Frontend App]
-│  │  • Next.js application
-│  │  • React components
-│  │  • Contract ABIs (generated)
-│  │  • Custom hooks
-│  │
-│  ├─ fhevm-shared/               [Shared Utilities]
-│  │  • TypeScript types
-│  │  • Filter DSL compiler
-│  │  • Merkle tree helpers
-│  │  • Encryption utilities
-│  │
-│  ├─ fhevm-react/                [React Integration]
-│  │  • useFhevm hook
-│  │  • FHEVM instance management
-│  │
-│  └─ postdeploy/                 [Post-Deploy Tasks]
-│     • ABI extraction
-│     • Address updates
-│
-└─ workspaces configuration (npm)
+│  ├─ fhevm-hardhat-template/  → Smart contracts, tests, deployment
+│  ├─ site/                     → Next.js frontend application
+│  ├─ fhevm-shared/             → Shared utilities (types, filterDsl, merkle)
+│  ├─ fhevm-react/              → FHEVM React integration (useFhevm)
+│  └─ postdeploy/               → Post-deployment automation
 ```
 
 ### Dependency Graph
 
 ```
-site
- ├─ depends on → fhevm-shared (types, filterDsl, merkle)
- ├─ depends on → fhevm-react (useFhevm)
- └─ uses ABIs from → fhevm-hardhat-template (generated)
-
-fhevm-hardhat-template
- └─ depends on → fhevm-shared (types, filterDsl for tests)
-
-fhevm-react
- └─ standalone (FHEVM SDK wrapper)
-
-fhevm-shared
- └─ standalone (pure utilities)
+site → fhevm-shared, fhevm-react, ABIs from fhevm-hardhat-template
+fhevm-hardhat-template → fhevm-shared (for tests)
+fhevm-react → standalone
+fhevm-shared → standalone
 ```
 
-### Build Process
+### Build Workflow
 
-1. **Development**: `npm run dev:mock`
-   - Starts Hardhat node (background)
-   - Deploys contracts
-   - Generates ABIs
-   - Starts Next.js dev server
+**Development**: `npm run dev:mock`
 
-2. **Production**: `npm run build`
-   - Builds fhevm-shared package
-   - Generates contract ABIs
-   - Builds Next.js app
-   - Ready for Netlify deployment
+1. Checks if Hardhat node is running
+2. Auto-deploys contracts if needed
+3. Generates ABIs for frontend
+4. Starts Next.js dev server
 
-## Performance Considerations
+**Production**: `npm run build`
 
-### Gas Optimization
+1. Builds fhevm-shared package
+2. Generates contract ABIs
+3. Builds Next.js application
+4. Outputs to `packages/site/.next`
 
-- **Caching**: Store frequently accessed dataset metadata in Job struct
-- **Batch Payouts**: Threshold-based settlement reduces transactions
-- **Stack Depth**: Filter VM limited to 8 elements per stack
-- **Sequential Processing**: Single-pass row processing
+## Design Trade-offs
 
-### Frontend Optimization
+### Performance vs Privacy
 
-- **Query Caching**: TanStack Query deduplicates and caches requests
-- **Refetch Intervals**: Configurable auto-refresh (default 5s)
-- **Optimistic Updates**: UI updates before blockchain confirmation
-- **Code Splitting**: Next.js automatic route-based splitting
+**Row-by-Row Processing**:
 
-### Blockchain Interaction
+- ➕ Fine-grained Merkle verification
+- ➕ Sequential integrity enforcement
+- ➖ High gas costs (one transaction per row)
+- ➖ Longer job completion times
 
-- **Read Operations**: Use readonly provider (no signing)
-- **Write Operations**: Require signer (MetaMask confirmation)
-- **Event Listening**: Subscribe to contract events for real-time updates
+**On-Chain FHE Operations**:
 
-## Scalability Considerations
+- ➕ Complete privacy (no decryption)
+- ➕ Trustless computation
+- ➖ Expensive gas costs
+- ➖ Limited operation complexity
 
-### Current Limitations
+### Security vs Flexibility
 
-- **Row-by-row Processing**: Each row requires separate transaction
-- **On-chain Gas Costs**: FHE operations are expensive
-- **Filter Complexity**: Limited by stack depth and gas limits
-- **Dataset Size**: Large datasets require many transactions
+**Sequential Row Processing**:
 
-### Future Improvements
+- ➕ Prevents row skipping attacks
+- ➕ Simplifies state tracking
+- ➖ No parallel processing
+- ➖ Cannot process subset of rows
 
-- **Batch Processing**: Process multiple rows per transaction
-- **Off-chain Computation**: ZK proofs for verification
-- **Layer 2 Integration**: Reduce gas costs on L2
-- **Optimized Operations**: Specialized circuits for common patterns
+**Stack Depth Limits (8 elements)**:
+
+- ➕ Prevents unbounded gas consumption
+- ➕ Guarantees termination
+- ➖ Limits filter complexity
+- ➖ Requires careful expression structuring
+
+### Scalability Paths
+
+**See README.md "Future Improvements" for planned enhancements including batch processing, ZK preflight validation, and Layer 2 integration.**
 
 ---
 
 **Related Documentation**:
 
-- [Smart Contracts Reference](SMART_CONTRACTS.md)
 - [Request & Job Lifecycle](REQUEST_JOB_LIFECYCLE.md)
 - [Filter VM Specification](FILTER_VM.md)
 - [Frontend Development](FRONTEND_DEVELOPMENT.md)

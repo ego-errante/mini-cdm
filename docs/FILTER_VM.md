@@ -137,53 +137,14 @@ All comparisons pop one encrypted value and one plaintext constant, then push en
 
 **Stack Effect**: `(euint64, uint64) → ebool`
 
-#### GT (0x10) - Greater Than
-
-```solidity
-ebool result = FHE.gt(encryptedVal, plainVal);
-```
-
-**Example**: `field[0] > 100`
-
-#### GE (0x11) - Greater or Equal
-
-```solidity
-ebool result = FHE.ge(encryptedVal, plainVal);
-```
-
-**Example**: `field[1] >= 18`
-
-#### LT (0x12) - Less Than
-
-```solidity
-ebool result = FHE.lt(encryptedVal, plainVal);
-```
-
-**Example**: `field[2] < 1000`
-
-#### LE (0x13) - Less or Equal
-
-```solidity
-ebool result = FHE.le(encryptedVal, plainVal);
-```
-
-**Example**: `field[3] <= 65`
-
-#### EQ (0x14) - Equal
-
-```solidity
-ebool result = FHE.eq(encryptedVal, plainVal);
-```
-
-**Example**: `field[4] == 42`
-
-#### NE (0x15) - Not Equal
-
-```solidity
-ebool result = FHE.ne(encryptedVal, plainVal);
-```
-
-**Example**: `field[5] != 999`
+| Opcode | Mnemonic | Solidity Operation               | Example Expression |
+| :----- | :------- | :------------------------------- | :----------------- |
+| `0x10` | `GT`     | `FHE.gt(encryptedVal, plainVal)` | `field[0] > 100`   |
+| `0x11` | `GE`     | `FHE.ge(encryptedVal, plainVal)` | `field[1] >= 18`   |
+| `0x12` | `LT`     | `FHE.lt(encryptedVal, plainVal)` | `field[2] < 1000`  |
+| `0x13` | `LE`     | `FHE.le(encryptedVal, plainVal)` | `field[3] <= 65`   |
+| `0x14` | `EQ`     | `FHE.eq(encryptedVal, plainVal)` | `field[4] == 42`   |
+| `0x15` | `NE`     | `FHE.ne(encryptedVal, plainVal)` | `field[5] != 999`  |
 
 ### Logical Operations
 
@@ -582,25 +543,6 @@ const filter = compileFilterDSL(
 );
 ```
 
-### Example 5: Exclusion Filter
-
-**Goal**: Exclude test accounts (id != 999)
-
-**DSL**:
-
-```typescript
-const filter = compileFilterDSL(ne(0, 999));
-```
-
-**Compiled**:
-
-```javascript
-{
-  bytecode: "0x0100000200000015",
-  consts: [999]
-}
-```
-
 ## Performance Considerations
 
 ### Gas Costs
@@ -625,7 +567,7 @@ Filter VM operations are FHE-based and relatively expensive:
 
 ### Filter Complexity Impact
 
-From gas benchmarking (see [gas_benchmarking.md](gas_benchmarking.md)):
+From gas benchmarking (see [GAS_BENCHMARKING.md](GAS_BENCHMARKING.md)):
 
 | Filter  | Bytecode Size | Operations                 | Gas per Row |
 | ------- | ------------- | -------------------------- | ----------- |
@@ -642,30 +584,93 @@ From gas benchmarking (see [gas_benchmarking.md](gas_benchmarking.md)):
 2. **Use Simple Filters**: Prefer single comparisons when possible
 3. **Short-Circuit Evaluation**: Put likely-false conditions first in AND
 4. **Avoid Deep Nesting**: Keep expression trees shallow
-5. **Reuse Constants**: Same constant can be pushed multiple times efficiently
+5. **Prefer Left-Associative Operations**: Reduces stack depth significantly
+6. **Reuse Constants**: Same constant can be pushed multiple times efficiently
+
+#### Left-Associative vs Right-Associative
+
+**Why It Matters**: The Filter VM has a maximum stack depth of 8 elements. Left-associative operations minimize peak stack depth during evaluation.
+
+**Stack Depth Calculation**:
+
+- For `and(A, B)`: depth = `max(depth(A), 1 + depth(B))`
+- Left-associative chains evaluate left-to-right, keeping depth low
+- Right-associative chains accumulate depth as they nest
+
+**Example - Combining 4 conditions**:
+
+```typescript
+// ❌ BAD: Right-associative (depth = 4)
+and(
+  gt(0, 1), // depth = 1
+  and(
+    gt(1, 1), // depth = 1
+    and(
+      gt(2, 1), // depth = 1
+      gt(3, 1) // depth = 1
+    ) // depth = max(1, 1+1) = 2
+  ) // depth = max(1, 1+2) = 3
+); // depth = max(1, 1+3) = 4
+
+// ✅ GOOD: Left-associative (depth = 2)
+and(
+  and(
+    and(
+      gt(0, 1), // depth = 1
+      gt(1, 1) // depth = 1
+    ), // depth = max(1, 1+1) = 2
+    gt(2, 1) // depth = 1
+  ), // depth = max(2, 1+1) = 2
+  gt(3, 1) // depth = 1
+); // depth = max(2, 1+1) = 2
+```
+
+**Practical Recommendation**:
+
+- For **simple chains** (2-4 conditions): Left-associative is simplest
+- For **many conditions** (5+ conditions): Consider balanced binary trees
+- The DSL compiler doesn't optimize automatically - structure matters!
+
+**Helper Function for Chaining**:
+
+```typescript
+/**
+ * Chain multiple conditions with left-associative AND
+ * Minimizes stack depth for long chains
+ */
+function chainAnd(...conditions: FilterDSL[]): FilterDSL {
+  if (conditions.length === 0) throw new Error("No conditions");
+  if (conditions.length === 1) return conditions[0];
+
+  // Left-fold: and(and(and(c1, c2), c3), c4)
+  return conditions.reduce((acc, condition) => and(acc, condition));
+}
+
+/**
+ * Chain multiple conditions with left-associative OR
+ */
+function chainOr(...conditions: FilterDSL[]): FilterDSL {
+  if (conditions.length === 0) throw new Error("No conditions");
+  if (conditions.length === 1) return conditions[0];
+
+  return conditions.reduce((acc, condition) => or(acc, condition));
+}
+
+// Usage
+const filter = chainAnd(
+  gt(0, 18), // age > 18
+  lt(1, 100000), // salary < 100000
+  eq(2, 1), // role == 1
+  ne(3, 0), // status != 0
+  ge(4, 5) // experience >= 5
+);
+// Compiled as: and(and(and(and(gt(0,18), lt(1,100000)), eq(2,1)), ne(3,0)), ge(4,5))
+// Stack depth: 2 (instead of 5 for right-associative)
+```
 
 ### Stack Depth Limits
 
 **Maximum Depth**: 8 elements per stack
-
-**Deep Nesting Example** (reaches limit):
-
-```typescript
-// This will fail: depth = 9
-and(
-  and(
-    and(
-      and(
-        and(and(and(and(gt(0, 1), gt(1, 1)), gt(2, 1)), gt(3, 1)), gt(4, 1)),
-        gt(5, 1)
-      ),
-      gt(6, 1)
-    ),
-    gt(7, 1)
-  ),
-  gt(8, 1)
-);
-```
 
 **Solution**: Flatten or split into multiple jobs
 
@@ -683,15 +688,7 @@ and(
 error FilterVMStackOverflow(string stackName);
 ```
 
-**Fix**:
-
-```typescript
-// Bad: depth = 9
-and(and(and(and(and(and(and(and(gt(0,1), gt(1,1)), gt(2,1)), ...
-
-// Good: flatten
-and(gt(0,1), and(gt(1,1), and(gt(2,1), gt(3,1))))
-```
+**Fix**: Restructure the expression to be left-associative or a balanced tree to reduce stack depth. See the _'Left-Associative vs Right-Associative'_ discussion in the 'Performance Considerations' section for details.
 
 #### FilterVMStackUnderflow
 
@@ -738,89 +735,10 @@ const filter = compileFilterDSL(gt(5, 100)); // field[5] doesn't exist
 
 **Fix**: Use valid field indices (0 to numColumns-1)
 
-### Testing Filters
-
-```typescript
-import { compileFilterDSL, gt, and, lt } from "@fhevm/shared";
-
-// 1. Create filter
-const dsl = and(gt(0, 18), lt(1, 100000));
-const filter = compileFilterDSL(dsl);
-
-console.log("Bytecode:", filter.bytecode);
-console.log("Consts:", filter.consts);
-
-// 2. Validate bytecode length
-if (filter.bytecode.length > 512 * 2 + 2) {
-  // 512 bytes = 1024 hex chars + "0x"
-  throw new Error("Bytecode too long");
-}
-
-// 3. Validate constants count
-if (filter.consts.length > 64) {
-  throw new Error("Too many constants");
-}
-
-// 4. Test in job params
-const jobParams = {
-  op: 3, // COUNT
-  targetField: 0,
-  weights: [],
-  divisor: 0,
-  clampMin: 0n,
-  clampMax: 0n,
-  roundBucket: 0,
-  filter: {
-    bytecode: filter.bytecode,
-    consts: filter.consts.map(BigInt),
-  },
-};
-
-// 5. Dry-run validation
-try {
-  await jobManager.callStatic.openJob(datasetId, buyerAddress, jobParams);
-  console.log("Filter validated successfully!");
-} catch (error) {
-  console.error("Filter validation failed:", error);
-}
-```
-
 ### Bytecode Inspection
 
 ```typescript
-function decodeBytecode(hex: string): string[] {
-  const bytes = hex
-    .slice(2)
-    .match(/.{2}/g)!
-    .map((b) => parseInt(b, 16));
-  const instructions: string[] = [];
-  let i = 0;
-
-  while (i < bytes.length) {
-    const opcode = bytes[i++];
-
-    if (opcode === 0x01) {
-      const fieldIdx = (bytes[i] << 8) | bytes[i + 1];
-      instructions.push(`PUSH_FIELD(${fieldIdx})`);
-      i += 2;
-    } else if (opcode === 0x02) {
-      const constIdx = (bytes[i] << 8) | bytes[i + 1];
-      instructions.push(`PUSH_CONST(${constIdx})`);
-      i += 2;
-    } else if (opcode === 0x10) instructions.push("GT");
-    else if (opcode === 0x11) instructions.push("GE");
-    else if (opcode === 0x12) instructions.push("LT");
-    else if (opcode === 0x13) instructions.push("LE");
-    else if (opcode === 0x14) instructions.push("EQ");
-    else if (opcode === 0x15) instructions.push("NE");
-    else if (opcode === 0x20) instructions.push("AND");
-    else if (opcode === 0x21) instructions.push("OR");
-    else if (opcode === 0x22) instructions.push("NOT");
-    else instructions.push(`UNKNOWN(0x${opcode.toString(16)})`);
-  }
-
-  return instructions;
-}
+function decodeBytecode(hex: string): string[] {..}
 
 // Usage
 const { bytecode, consts } = compileFilterDSL(and(gt(0, 18), lt(1, 100000)));
@@ -834,7 +752,6 @@ console.log("Constants:", consts);
 
 **Related Documentation**:
 
-- [Smart Contracts Reference](SMART_CONTRACTS.md)
 - [Request & Job Lifecycle](REQUEST_JOB_LIFECYCLE.md)
 - [Architecture Guide](ARCHITECTURE.md)
-- [Gas Benchmarking](gas_benchmarking.md)
+- [Gas Benchmarking](GAS_BENCHMARKING.md)
