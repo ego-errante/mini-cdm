@@ -5,7 +5,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { JobManagerAddresses } from "@/abi/JobManagerAddresses";
 import { JobManagerABI } from "@/abi/JobManagerABI";
-import { getContractByChainId, isContractDeployed } from "@/lib/utils";
+import {
+  getContractByChainId,
+  isContractDeployed,
+  executeContractTransaction,
+} from "@/lib/utils";
 import {
   Op,
   RequestStatus,
@@ -277,9 +281,12 @@ export const useJobManager = (parameters: {
         ethersSigner
       );
 
-      const tx = await contract.acceptRequest(requestId);
-      const receipt = await tx.wait();
-      return receipt;
+      return await executeContractTransaction(
+        contract,
+        "acceptRequest",
+        [requestId],
+        ethersSigner
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
@@ -345,15 +352,12 @@ export const useJobManager = (parameters: {
         ethersSigner
       );
 
-      const tx = await contract.pushRow(
-        params.jobId,
-        params.rowData,
-        params.merkleProof,
-        params.rowIndex
+      return await executeContractTransaction(
+        contract,
+        "pushRow",
+        [params.jobId, params.rowData, params.merkleProof, params.rowIndex],
+        ethersSigner
       );
-
-      const receipt = await tx.wait();
-      return receipt;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });
@@ -372,9 +376,12 @@ export const useJobManager = (parameters: {
         ethersSigner
       );
 
-      const tx = await contract.finalize(jobId);
-      const receipt = await tx.wait();
-      return receipt;
+      return await executeContractTransaction(
+        contract,
+        "finalize",
+        [jobId],
+        ethersSigner
+      );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job-manager", "activity"] });

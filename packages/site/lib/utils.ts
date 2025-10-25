@@ -136,3 +136,44 @@ export function getNetworkName(chainId: number | string | undefined): string {
   const id = typeof chainId === "string" ? parseInt(chainId, 10) : chainId;
   return NETWORK_NAMES[id] || `Chain ${id}`;
 }
+
+/**
+ * Execute a contract transaction with gas estimation and safety margin
+ *
+ * @param contract - The ethers contract instance
+ * @param functionName - The name of the contract function to call
+ * @param args - The arguments to pass to the function
+ * @param signer - The ethers signer to use for the transaction
+ * @param options - Additional transaction options (e.g., value for payable functions)
+ * @returns Promise resolving to the transaction receipt
+ */
+export async function executeContractTransaction(
+  contract: ethers.Contract,
+  functionName: string,
+  args: any[],
+  signer: ethers.JsonRpcSigner,
+  options: Record<string, any> = {}
+): Promise<ethers.TransactionReceipt> {
+  // Encode function data
+  const data = contract.interface.encodeFunctionData(functionName, args);
+
+  // Estimate gas using the signer
+  const est = await signer.estimateGas({
+    to: contract.target,
+    data: data,
+    ...options,
+  });
+
+  // Add 20% safety margin
+  const gasLimit = (BigInt(est) * BigInt(120)) / BigInt(100);
+
+  // Sanity check with static call
+  await contract[functionName].staticCall(...args, { gasLimit, ...options });
+
+  // Send transaction with explicit gas limit
+  const tx = await contract[functionName](...args, { gasLimit, ...options });
+
+  // Wait for receipt
+  const receipt = await tx.wait();
+  return receipt;
+}
