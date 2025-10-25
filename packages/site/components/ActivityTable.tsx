@@ -20,7 +20,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { Check, X, Ban, Play, Eye } from "lucide-react";
+import { Check, X, Ban, Play, Eye, Loader2 } from "lucide-react";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { ViewResultModal } from "./ViewResultModal";
 import { truncateAddress } from "@/lib/datasetHelpers";
@@ -233,145 +233,176 @@ export function ActivityTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {activityRows.map((row, index) => (
-              <TableRow key={index}>
-                <TableCell>
-                  {row.requestId ? `#${row.requestId.toString()}` : "-"}
-                </TableCell>
-                <TableCell>
-                  {row.jobId ? `#${row.jobId.toString()}` : "-"}
-                </TableCell>
-                <TableCell className="font-mono">
-                  {row.buyer ? truncateAddress(row.buyer) : "-"}
-                </TableCell>
-                <TableCell>
-                  {row.status !== undefined ? getStatusBadge(row.status) : "-"}
-                </TableCell>
-                <TableCell>
-                  {row.timestamp
-                    ? new Date(
-                        Number(row.timestamp) * 1000
-                      ).toLocaleDateString()
-                    : "-"}
-                </TableCell>
-                <TableCell className="text-right">
-                  <div className="flex justify-end gap-2">
-                    {/* Owner actions for pending requests */}
-                    {isOwner &&
-                      row.request &&
-                      row.status === RequestStatus.PENDING && (
-                        <>
+            {activityRows.map((row, index) => {
+              const isAccepting =
+                acceptMutation.isPending &&
+                acceptMutation.variables === row.requestId;
+              const isRejecting =
+                rejectMutation.isPending &&
+                rejectMutation.variables === row.requestId;
+              const isCancelling =
+                cancelMutation.isPending &&
+                cancelMutation.variables === row.requestId;
+
+              return (
+                <TableRow key={index}>
+                  <TableCell>
+                    {row.requestId ? `#${row.requestId.toString()}` : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {row.jobId ? `#${row.jobId.toString()}` : "-"}
+                  </TableCell>
+                  <TableCell className="font-mono">
+                    {row.buyer ? truncateAddress(row.buyer) : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {row.status !== undefined
+                      ? getStatusBadge(row.status)
+                      : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {row.timestamp
+                      ? new Date(
+                          Number(row.timestamp) * 1000
+                        ).toLocaleDateString()
+                      : "-"}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <div className="flex justify-end gap-2">
+                      {/* Owner actions for pending requests */}
+                      {isOwner &&
+                        row.request &&
+                        row.status === RequestStatus.PENDING && (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 disabled:cursor-not-allowed"
+                                  disabled={isAccepting || isRejecting}
+                                  onClick={() =>
+                                    handleAcceptRequest(row.requestId!)
+                                  }
+                                >
+                                  {isAccepting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <Check className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Accept Request</TooltipContent>
+                            </Tooltip>
+
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  size="icon"
+                                  variant="ghost"
+                                  className="h-8 w-8 disabled:cursor-disabled"
+                                  disabled={isAccepting || isRejecting}
+                                  onClick={() =>
+                                    handleRejectClick(row.requestId!)
+                                  }
+                                >
+                                  {isRejecting ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    <X className="h-4 w-4" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Reject Request</TooltipContent>
+                            </Tooltip>
+                          </>
+                        )}
+
+                      {/* Buyer actions for pending requests */}
+                      {!isOwner &&
+                        row.request &&
+                        row.status === RequestStatus.PENDING &&
+                        currentUserAddress &&
+                        row.buyer?.toLowerCase() ===
+                          currentUserAddress.toLowerCase() && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="h-8 w-8"
+                                className="h-8 w-8 disabled:cursor-not-allowed"
+                                disabled={isCancelling}
                                 onClick={() =>
-                                  handleAcceptRequest(row.requestId!)
+                                  handleCancelClick(row.requestId!)
                                 }
                               >
-                                <Check className="h-4 w-4" />
+                                {isCancelling ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Ban className="h-4 w-4" />
+                                )}
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Accept Request</TooltipContent>
+                            <TooltipContent>Cancel Request</TooltipContent>
                           </Tooltip>
+                        )}
 
+                      {/* Owner actions for accepted requests */}
+                      {isOwner &&
+                        row.request &&
+                        row.status === RequestStatus.ACCEPTED &&
+                        onProcessJob && (
                           <Tooltip>
                             <TooltipTrigger asChild>
                               <Button
                                 size="icon"
                                 variant="ghost"
-                                className="h-8 w-8"
-                                onClick={() =>
-                                  handleRejectClick(row.requestId!)
-                                }
+                                className="h-8 w-8 disabled:cursor-not-allowed"
+                                onClick={() => onProcessJob(row.requestId!)}
                               >
-                                <X className="h-4 w-4" />
+                                <Play className="h-4 w-4" />
                               </Button>
                             </TooltipTrigger>
-                            <TooltipContent>Reject Request</TooltipContent>
+                            <TooltipContent>Process Job</TooltipContent>
                           </Tooltip>
-                        </>
-                      )}
+                        )}
 
-                    {/* Buyer actions for pending requests */}
-                    {!isOwner &&
-                      row.request &&
-                      row.status === RequestStatus.PENDING &&
-                      currentUserAddress &&
-                      row.buyer?.toLowerCase() ===
-                        currentUserAddress.toLowerCase() && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={() => handleCancelClick(row.requestId!)}
-                            >
-                              <Ban className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Cancel Request</TooltipContent>
-                        </Tooltip>
-                      )}
-
-                    {/* Owner actions for accepted requests */}
-                    {isOwner &&
-                      row.request &&
-                      row.status === RequestStatus.ACCEPTED &&
-                      onProcessJob && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={() => onProcessJob(row.requestId!)}
-                            >
-                              <Play className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Process Job</TooltipContent>
-                        </Tooltip>
-                      )}
-
-                    {/* View Status/Result button for buyers */}
-                    {row.request &&
-                      currentUserAddress &&
-                      row.buyer?.toLowerCase() ===
-                        currentUserAddress.toLowerCase() && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              size="icon"
-                              variant="ghost"
-                              className="h-8 w-8"
-                              onClick={() =>
-                                setViewResultModal({
-                                  open: true,
-                                  requestId: row.requestId,
-                                  jobId: row.jobId,
-                                })
-                              }
-                            >
-                              <Eye className="h-4 w-4" />
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            {row.status === RequestStatus.COMPLETED
-                              ? "View Result"
-                              : row.status === RequestStatus.ACCEPTED
-                                ? "View Progress & Manage Allowance"
-                                : "View Status"}
-                          </TooltipContent>
-                        </Tooltip>
-                      )}
-                  </div>
-                </TableCell>
-              </TableRow>
-            ))}
+                      {/* View Status/Result button for buyers */}
+                      {row.request &&
+                        currentUserAddress &&
+                        row.buyer?.toLowerCase() ===
+                          currentUserAddress.toLowerCase() && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="icon"
+                                variant="ghost"
+                                className="h-8 w-8 disabled:cursor-not-allowed"
+                                onClick={() =>
+                                  setViewResultModal({
+                                    open: true,
+                                    requestId: row.requestId,
+                                    jobId: row.jobId,
+                                  })
+                                }
+                              >
+                                <Eye className="h-4 w-4" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {row.status === RequestStatus.COMPLETED
+                                ? "View Result"
+                                : row.status === RequestStatus.ACCEPTED
+                                  ? "View Progress & Manage Allowance"
+                                  : "View Status"}
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </TooltipProvider>
