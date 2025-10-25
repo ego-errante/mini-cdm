@@ -150,8 +150,10 @@ export function getNetworkName(chainId: number | string | undefined): string {
 export async function executeContractTransaction(
   contract: ethers.Contract,
   functionName: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   args: any[],
   signer: ethers.JsonRpcSigner,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   options: Record<string, any> = {}
 ): Promise<ethers.TransactionReceipt> {
   // Encode function data
