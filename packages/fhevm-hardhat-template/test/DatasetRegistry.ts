@@ -901,6 +901,195 @@ describe("DatasetRegistry", function () {
       expect(allDatasets[2].merkleRoot).to.equal(ethers.keccak256(ethers.toUtf8Bytes("root_5")));
     });
   });
+
+  describe("dataset descriptions", () => {
+    it("should allow dataset owner to set description", async () => {
+      const datasetId = 1;
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+      const description = "A test dataset containing sample data for analysis";
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      await expect(datasetRegistryContract.connect(signers.alice).setDatasetDescription(datasetId, description))
+        .to.emit(datasetRegistryContract, "DatasetDescriptionSet")
+        .withArgs(datasetId, description);
+
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal(description);
+    });
+
+    it("should reject setting description from non-owner", async () => {
+      const datasetId = 1;
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+      const description = "A test dataset containing sample data for analysis";
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      await expect(
+        datasetRegistryContract.connect(signers.bob).setDatasetDescription(datasetId, description),
+      ).to.be.revertedWithCustomError(datasetRegistryContract, "NotDatasetOwner");
+    });
+
+    it("should reject setting description for non-existent dataset", async () => {
+      const nonExistentId = 999;
+      const description = "A test dataset containing sample data for analysis";
+
+      await expect(
+        datasetRegistryContract.connect(signers.alice).setDatasetDescription(nonExistentId, description),
+      ).to.be.revertedWithCustomError(datasetRegistryContract, "DatasetNotFound");
+    });
+
+    it("should allow updating description", async () => {
+      const datasetId = 1;
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+      const initialDescription = "Initial description";
+      const updatedDescription = "Updated description with more details";
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      // Set initial description
+      await datasetRegistryContract.connect(signers.alice).setDatasetDescription(datasetId, initialDescription);
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal(initialDescription);
+
+      // Update description
+      await expect(datasetRegistryContract.connect(signers.alice).setDatasetDescription(datasetId, updatedDescription))
+        .to.emit(datasetRegistryContract, "DatasetDescriptionSet")
+        .withArgs(datasetId, updatedDescription);
+
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal(updatedDescription);
+    });
+
+    it("should return empty string for datasets without description", async () => {
+      const datasetId = 1;
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal("");
+    });
+
+    it("should return empty string for non-existent datasets", async () => {
+      const nonExistentId = 999;
+      expect(await datasetRegistryContract.getDatasetDescription(nonExistentId)).to.equal("");
+    });
+
+    it("should get all dataset descriptions", async () => {
+      // Create multiple datasets with descriptions
+      const datasets = [
+        { id: 1, owner: signers.alice, description: "Alice's first dataset" },
+        { id: 2, owner: signers.bob, description: "Bob's analytics dataset" },
+        { id: 3, owner: signers.alice, description: "" }, // No description
+      ];
+
+      for (const { id, owner, description } of datasets) {
+        const rowCount = 1000;
+        const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes(`root_${id}`));
+        const numColumns = 3;
+        const kAnonymity = KAnonymityLevels.NONE;
+        const cooldownSec = 0;
+
+        const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+          datasetRegistryContractAddress,
+          owner,
+          kAnonymity,
+        );
+
+        await datasetRegistryContract
+          .connect(owner)
+          .commitDataset(id, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+        if (description !== "") {
+          await datasetRegistryContract.connect(owner).setDatasetDescription(id, description);
+        }
+      }
+
+      const allDescriptions = await datasetRegistryContract.getAllDatasetDescriptions();
+      expect(allDescriptions).to.have.length(3);
+      expect(allDescriptions[0].datasetId).to.equal(1);
+      expect(allDescriptions[0].description).to.equal("Alice's first dataset");
+      expect(allDescriptions[1].datasetId).to.equal(2);
+      expect(allDescriptions[1].description).to.equal("Bob's analytics dataset");
+      expect(allDescriptions[2].datasetId).to.equal(3);
+      expect(allDescriptions[2].description).to.equal("");
+    });
+
+    it("should clear description when dataset is deleted", async () => {
+      const datasetId = 1;
+      const rowCount = 1000;
+      const merkleRoot = ethers.keccak256(ethers.toUtf8Bytes("test_root"));
+      const numColumns = 3;
+      const kAnonymity = KAnonymityLevels.NONE;
+      const cooldownSec = 0;
+      const description = "A test dataset containing sample data for analysis";
+
+      const { handle: encryptedKAnonymity, inputProof } = await encryptKAnonymity(
+        datasetRegistryContractAddress,
+        signers.alice,
+        kAnonymity,
+      );
+
+      await datasetRegistryContract
+        .connect(signers.alice)
+        .commitDataset(datasetId, rowCount, merkleRoot, numColumns, encryptedKAnonymity, inputProof, cooldownSec);
+
+      // Set description
+      await datasetRegistryContract.connect(signers.alice).setDatasetDescription(datasetId, description);
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal(description);
+
+      // Delete dataset
+      await datasetRegistryContract.connect(signers.alice).deleteDataset(datasetId);
+
+      // Description should be cleared
+      expect(await datasetRegistryContract.getDatasetDescription(datasetId)).to.equal("");
+    });
+  });
 });
 
 type Signers = {

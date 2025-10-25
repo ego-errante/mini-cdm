@@ -17,6 +17,7 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
     mapping(uint256 => Dataset) private _datasets;
     uint256[] private _datasetIds;
     mapping(uint256 => uint256) private _datasetIdToIndex;
+    mapping(uint256 => string) private _datasetDescriptions;
     address private _jobManager;
 
     struct Dataset {
@@ -79,6 +80,25 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
             return false;
         }
         return fieldCount == dataset.numColumns;
+    }
+
+    function getDatasetDescription(uint256 datasetId) external view returns (string memory) {
+        return _datasetDescriptions[datasetId];
+    }
+
+    function getAllDatasetDescriptions() external view returns (DatasetDescriptionWithId[] memory) {
+        uint256 count = _datasetIds.length;
+        DatasetDescriptionWithId[] memory descriptions = new DatasetDescriptionWithId[](count);
+
+        for (uint256 i = 0; i < count; i++) {
+            uint256 datasetId = _datasetIds[i];
+            descriptions[i] = DatasetDescriptionWithId({
+                datasetId: datasetId,
+                description: _datasetDescriptions[datasetId]
+            });
+        }
+
+        return descriptions;
     }
 
     // ---- administration ----
@@ -274,7 +294,28 @@ contract DatasetRegistry is IDatasetRegistry, SepoliaConfig, Ownable {
 
         // Delete the dataset
         delete _datasets[datasetId];
+        // Clear the description
+        delete _datasetDescriptions[datasetId];
 
         emit DatasetDeleted(datasetId, msg.sender);
+    }
+
+    function setDatasetDescription(uint256 datasetId, string calldata description) external {
+        Dataset storage dataset = _datasets[datasetId];
+
+        // Check if dataset exists
+        if (!dataset.exists) {
+            revert DatasetNotFound();
+        }
+
+        // Check if caller is owner
+        if (dataset.owner != msg.sender) {
+            revert NotDatasetOwner();
+        }
+
+        // Set the description
+        _datasetDescriptions[datasetId] = description;
+
+        emit DatasetDescriptionSet(datasetId, description);
     }
 }

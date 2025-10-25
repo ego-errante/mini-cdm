@@ -23,6 +23,10 @@ interface IDatasetRegistry {
 
     function isRowSchemaValid(uint256 datasetId, uint256 fieldCount) external view returns (bool);
 
+    function getDatasetDescription(uint256 datasetId) external view returns (string memory);
+
+    function getAllDatasetDescriptions() external view returns (DatasetDescriptionWithId[] memory);
+
     // ---- administration ----
     function setJobManager(address jobManager) external;
 
@@ -32,6 +36,14 @@ interface IDatasetRegistry {
     function commitDataset(uint256 datasetId, uint256 rowCount, bytes32 merkleRoot, uint256 numColumns, externalEuint32 kAnonymity, bytes calldata inputProof, uint32 cooldownSec) external;
 
     function deleteDataset(uint256 datasetId) external;
+
+    function setDatasetDescription(uint256 datasetId, string calldata description) external;
+
+    // ---- structs ----
+    struct DatasetDescriptionWithId {
+        uint256 datasetId;
+        string description;
+    }
 
     // ---- events ----
     event DatasetCommitted(
@@ -45,6 +57,8 @@ interface IDatasetRegistry {
     );
 
     event DatasetDeleted(uint256 indexed datasetId, address indexed owner);
+
+    event DatasetDescriptionSet(uint256 indexed datasetId, string description);
 
     event JobManagerSet(address indexed jobManager);
 
