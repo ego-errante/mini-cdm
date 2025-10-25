@@ -1,6 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useForm } from "react-hook-form";
 import { toast } from "sonner";
 import {
   Sheet,
@@ -9,16 +10,34 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Trash2, Copy } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from "@/components/ui/form";
+import { Trash2, Copy, Edit } from "lucide-react";
 import { ActivityTable } from "./ActivityTable";
 import { NewRequestModal } from "./NewRequestModal";
 import { JobProcessorModal } from "./JobProcessorModal";
 import { ConfirmationModal } from "./ConfirmationModal";
 import { truncateAddress } from "@/lib/datasetHelpers";
 import { JobData, JobRequest } from "@fhevm/shared";
+import { useCDMContext } from "@/hooks/useCDMContext";
 
 interface DatasetDrawerProps {
   open: boolean;
@@ -31,6 +50,7 @@ interface DatasetDrawerProps {
     merkleRoot: string;
     kAnonymity: string;
     cooldownSec: number;
+    description?: string;
   };
   activity: {
     requests: JobRequest[];
@@ -38,6 +58,10 @@ interface DatasetDrawerProps {
   };
   isOwner: boolean;
   currentUserAddress: string | undefined;
+}
+
+interface EditDescriptionFormValues {
+  description: string;
 }
 
 export function DatasetDrawer({
@@ -50,9 +74,29 @@ export function DatasetDrawer({
 }: DatasetDrawerProps) {
   const [showNewRequestModal, setShowNewRequestModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showEditDescriptionModal, setShowEditDescriptionModal] =
+    useState(false);
   const [acceptedRequestId, setAcceptedRequestId] = useState<bigint | null>(
     null
   );
+
+  // Hooks
+  const { datasetRegistry } = useCDMContext();
+  const { setDatasetDescriptionMutation } = datasetRegistry;
+
+  // Form for editing description
+  const editDescriptionForm = useForm<EditDescriptionFormValues>({
+    defaultValues: {
+      description: dataset.description || "",
+    },
+  });
+
+  // Update form when dataset changes
+  useEffect(() => {
+    editDescriptionForm.reset({
+      description: dataset.description || "",
+    });
+  }, [dataset.description, editDescriptionForm]);
 
   function handleRequestAccepted(requestId: bigint) {
     // Open the job processor modal with the accepted request ID
@@ -63,6 +107,23 @@ export function DatasetDrawer({
   function handleProcessJob(requestId: bigint) {
     // Open the job processor modal for processing an accepted job
     setAcceptedRequestId(requestId);
+  }
+
+  async function handleEditDescription(values: EditDescriptionFormValues) {
+    try {
+      await setDatasetDescriptionMutation.mutateAsync({
+        datasetId: dataset.id,
+        description: values.description.trim(),
+      });
+
+      toast.success("Description updated successfully!");
+      setShowEditDescriptionModal(false);
+    } catch (error) {
+      console.error("Failed to update description:", error);
+      toast.error(
+        error instanceof Error ? error.message : "Failed to update description"
+      );
+    }
   }
 
   return (
@@ -105,6 +166,12 @@ export function DatasetDrawer({
                 >
                   <Copy className="w-3 h-3" />
                 </Button>
+
+                {isOwner && (
+                  <div className="mb-2">
+                    <Badge variant="secondary">Your dataset</Badge>
+                  </div>
+                )}
               </div>
             </div>
           </SheetHeader>
@@ -129,11 +196,6 @@ export function DatasetDrawer({
             <div>
               <h3 className="text-sm font-semibold mb-3">Dataset Summary</h3>
               <div className="space-y-2 text-sm">
-                {isOwner && (
-                  <div className="mb-2">
-                    <Badge variant="secondary">You are the owner</Badge>
-                  </div>
-                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">Rows:</span>
                   <span>{dataset.rowCount}</span>
@@ -169,6 +231,36 @@ export function DatasetDrawer({
                     {dataset.merkleRoot}
                   </span>
                 </div>
+              </div>
+            </div>
+
+            {/* Dataset Description */}
+            <div>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-sm font-semibold">Description</h3>
+                {isOwner && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setShowEditDescriptionModal(true)}
+                  >
+                    <Edit className="h-4 w-4 mr-2" />
+                    Edit
+                  </Button>
+                )}
+              </div>
+              <div className="text-sm">
+                {dataset.description ? (
+                  <p className="text-muted-foreground whitespace-pre-wrap">
+                    {dataset.description}
+                  </p>
+                ) : (
+                  <p className="text-muted-foreground italic">
+                    {isOwner
+                      ? "No description provided. Click Edit to add one."
+                      : "No description provided by the dataset owner."}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -232,6 +324,63 @@ export function DatasetDrawer({
         datasetRowCount={dataset.rowCount}
         datasetNumColumns={dataset.numColumns}
       />
+
+      {/* Edit Description Modal */}
+      <Dialog
+        open={showEditDescriptionModal}
+        onOpenChange={setShowEditDescriptionModal}
+      >
+        <DialogContent className="sm:max-w-[500px]">
+          <DialogHeader>
+            <DialogTitle>Edit Dataset Description</DialogTitle>
+            <DialogDescription>
+              Update the description for dataset #
+              {truncateAddress(dataset.id.toString(), 6)}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...editDescriptionForm}>
+            <form
+              onSubmit={editDescriptionForm.handleSubmit(handleEditDescription)}
+              className="space-y-4"
+            >
+              <FormField
+                control={editDescriptionForm.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        {...field}
+                        placeholder="Describe what data this dataset contains and its purpose..."
+                        rows={4}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowEditDescriptionModal(false)}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  loading={setDatasetDescriptionMutation.isPending}
+                >
+                  Save Description
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
     </>
   );
 }

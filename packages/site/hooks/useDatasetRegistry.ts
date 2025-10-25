@@ -20,6 +20,7 @@ export type DatasetObject = {
   exists: boolean;
   kAnonymity: string;
   cooldownSec: number;
+  description?: string;
 };
 
 export const useDatasetRegistry = (parameters: {
@@ -74,6 +75,7 @@ export const useDatasetRegistry = (parameters: {
       numColumns: number;
       kAnonymity: number;
       cooldownSec: number;
+      description?: string;
     }) => {
       if (!datasetRegistry.address || !instance || !ethersSigner) {
         throw new Error("Contract, instance, or signer not available");
@@ -86,6 +88,7 @@ export const useDatasetRegistry = (parameters: {
         numColumns,
         kAnonymity,
         cooldownSec,
+        description,
       } = params;
 
       // Encrypt kAnonymity value
@@ -111,6 +114,24 @@ export const useDatasetRegistry = (parameters: {
       );
 
       const receipt = await tx.wait();
+
+      // If description is provided, set it after dataset creation
+      if (description && description.trim()) {
+        try {
+          const descriptionTx = await contract.setDatasetDescription(
+            datasetId,
+            description.trim()
+          );
+          await descriptionTx.wait();
+        } catch (error) {
+          // Log error but don't fail the entire mutation since dataset was created successfully
+          console.warn(
+            "Failed to set dataset description after creation:",
+            error
+          );
+        }
+      }
+
       return receipt;
     },
     onSuccess: () => {
@@ -147,6 +168,33 @@ export const useDatasetRegistry = (parameters: {
     },
   });
 
+  const setDatasetDescriptionMutation = useMutation({
+    mutationFn: async (params: { datasetId: bigint; description: string }) => {
+      if (!datasetRegistry.address || !ethersSigner) {
+        throw new Error("Contract or signer not available");
+      }
+
+      const { datasetId, description } = params;
+
+      const contract = new ethers.Contract(
+        datasetRegistry.address,
+        datasetRegistry.abi,
+        ethersSigner
+      );
+
+      const tx = await contract.setDatasetDescription(datasetId, description);
+      const receipt = await tx.wait();
+      return receipt;
+    },
+    onSuccess: () => {
+      // Refetch datasets after successful description update
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    },
+    onError: (error) => {
+      console.error("Dataset description update failed:", error);
+    },
+  });
+
   const getDatasetsQuery = useQuery({
     queryKey: ["datasets", datasetRegistry.address],
     queryFn: async (): Promise<DatasetObject[]> => {
@@ -160,10 +208,19 @@ export const useDatasetRegistry = (parameters: {
         ethersReadonlyProvider
       );
 
-      // Get all datasets at once
-      const contractDatasets = await contract.getAllDatasets();
+      // Fetch datasets and descriptions in parallel for better performance
+      const [contractDatasets, contractDescriptions] = await Promise.all([
+        contract.getAllDatasets(),
+        contract.getAllDatasetDescriptions(),
+      ]);
 
-      // Convert contract DatasetWithId[] to DatasetObject[]
+      // Convert descriptions array to a map for efficient lookup
+      const descriptionMap = new Map<bigint, string>();
+      contractDescriptions.forEach((desc: any) => {
+        descriptionMap.set(BigInt(desc.datasetId), desc.description);
+      });
+
+      // Convert contract DatasetWithId[] to DatasetObject[] and merge descriptions
       const datasets: DatasetObject[] = contractDatasets.map(
         (dataset: any) => ({
           id: BigInt(dataset.id),
@@ -174,6 +231,7 @@ export const useDatasetRegistry = (parameters: {
           exists: dataset.exists,
           kAnonymity: dataset.kAnonymity,
           cooldownSec: Number(dataset.cooldownSec),
+          description: descriptionMap.get(BigInt(dataset.id)) || undefined,
         })
       );
 
@@ -210,16 +268,25 @@ export const useDatasetRegistry = (parameters: {
       queryClient.invalidateQueries({ queryKey: ["datasets"] });
     };
 
+    const handleDatasetDescriptionSet = (
+      datasetId: bigint,
+      description: string
+    ) => {
+      queryClient.invalidateQueries({ queryKey: ["datasets"] });
+    };
+
     // Attach event listeners
     contract.on("DatasetCommitted", handleDatasetCommitted);
     contract.on("DatasetDeleted", handleDatasetDeleted);
     contract.on("JobManagerSet", handleJobManagerSet);
+    contract.on("DatasetDescriptionSet", handleDatasetDescriptionSet);
 
     // Cleanup function
     return () => {
       contract.off("DatasetCommitted", handleDatasetCommitted);
       contract.off("DatasetDeleted", handleDatasetDeleted);
       contract.off("JobManagerSet", handleJobManagerSet);
+      contract.off("DatasetDescriptionSet", handleDatasetDescriptionSet);
     };
   }, [datasetRegistry.address, ethersReadonlyProvider, queryClient]);
 
@@ -229,6 +296,7 @@ export const useDatasetRegistry = (parameters: {
     contractAddress: datasetRegistry.address,
     commitDatasetMutation,
     deleteDatasetMutation,
+    setDatasetDescriptionMutation,
     getDatasetsQuery,
   };
 };

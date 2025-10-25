@@ -16,6 +16,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
 import {
@@ -51,6 +52,7 @@ interface CreateDatasetModalProps {
 interface DatasetFormValues {
   kAnonymity: number;
   cooldownSec: number;
+  description: string;
 }
 
 export function CreateDatasetModal({
@@ -63,6 +65,7 @@ export function CreateDatasetModal({
     defaultValues: {
       kAnonymity: 0,
       cooldownSec: 0,
+      description: "",
     },
   });
 
@@ -71,6 +74,7 @@ export function CreateDatasetModal({
   const { datasetRegistry, jobManager, fhevmInstance, ethersSigner } =
     useCDMContext();
   const { commitDatasetMutation } = datasetRegistry;
+  const isSubmitting = commitDatasetMutation.isPending;
 
   // Encryption state
   const [encryptionProgress, setEncryptionProgress] = useState({
@@ -204,6 +208,7 @@ export function CreateDatasetModal({
         numColumns: encryptDatasetMutation.data.numColumns,
         kAnonymity: values.kAnonymity,
         cooldownSec: values.cooldownSec,
+        description: values.description,
       });
 
       // Invalidate and refetch datasets query
@@ -351,6 +356,30 @@ export function CreateDatasetModal({
                     )}
                   />
 
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder="Describe what data this dataset contains and its purpose..."
+                            disabled={encryptDatasetMutation.isPending}
+                            rows={3}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Provide a clear description of the dataset to help
+                          others understand what data is available and how it
+                          can be used.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
                   {/* Section 3: Encryption & Processing */}
                   {!(encryptDatasetMutation.data?.rows.length ?? 0) && (
                     <Button
@@ -465,12 +494,16 @@ export function CreateDatasetModal({
               <Button
                 variant="outline"
                 onClick={() => onOpenChange(false)}
-                disabled={encryptDatasetMutation.isPending}
+                disabled={encryptDatasetMutation.isPending || isSubmitting}
               >
                 Cancel
               </Button>
-              <Button type="submit" disabled={!isValid}>
-                Create Dataset
+              <Button
+                type="submit"
+                disabled={!isValid || isSubmitting}
+                loading={isSubmitting}
+              >
+                {isSubmitting ? "Creating..." : "Create Dataset"}
               </Button>
             </DialogFooter>
           </form>

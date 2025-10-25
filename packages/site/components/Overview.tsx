@@ -179,6 +179,8 @@ export default function Overview() {
                 userRequestCount={stats.userRequestCount}
                 userPendingRequestCount={stats.userPendingRequestCount}
                 userAcceptedRequestCount={stats.userAcceptedRequestCount}
+                description={dataset.description}
+                currentUserAddress={currentUserAddress}
                 onClick={() => setSelectedDatasetId(dataset.id)}
               />
             );

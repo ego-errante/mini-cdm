@@ -17,6 +17,8 @@ interface DatasetCardProps {
   userRequestCount: number;
   userPendingRequestCount: number;
   userAcceptedRequestCount: number;
+  description?: string;
+  currentUserAddress?: string;
   onClick: () => void;
 }
 
@@ -30,6 +32,8 @@ export function DatasetCard({
   userRequestCount,
   userPendingRequestCount,
   userAcceptedRequestCount,
+  description,
+  currentUserAddress,
   onClick,
 }: DatasetCardProps) {
   return (
@@ -59,6 +63,12 @@ export function DatasetCard({
       </CardHeader>
       <CardContent>
         <div className="space-y-6">
+          {currentUserAddress &&
+            owner.toLowerCase() === currentUserAddress.toLowerCase() && (
+              <div className="mb-2">
+                <Badge variant="secondary">Your dataset</Badge>
+              </div>
+            )}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground text-sm">Owner:</span>
             <div className="flex items-center gap-2">
@@ -79,6 +89,20 @@ export function DatasetCard({
               </Button>
             </div>
           </div>
+
+          {description && (
+            <div className="flex flex-col items-start gap-2">
+              <span className="text-muted-foreground text-sm">
+                Description:
+              </span>
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                {description.length > 100
+                  ? `${description.substring(0, 100)}...`
+                  : description}
+              </p>
+            </div>
+          )}
+
           {userRequestCount > 0 && (
             <div className="flex flex-col items-start gap-2 bg-muted/50 p-2 rounded-md">
               <span className="text-muted-foreground text-sm">
