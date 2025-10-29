@@ -2,6 +2,11 @@
 
 A privacy-preserving data marketplace built on [Zama's FHEVM](https://docs.zama.ai/fhevm) (Fully Homomorphic Encryption for Ethereum Virtual Machine). Mini-CDM enables secure computation over encrypted datasets without revealing the underlying data to buyers or the blockchain.
 
+### Demo
+
+- Website: https://mini-cdm.netlify.app/
+- Video: https://drive.google.com/file/d/1YAbnfLRuJ8MrNkMZ4AUaOhEIWQQMAwkI/view?usp=drive_link
+
 ## What is Mini-CDM?
 
 Mini-CDM is a decentralized marketplace where:
